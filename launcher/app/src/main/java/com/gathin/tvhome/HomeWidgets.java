@@ -24,6 +24,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -59,6 +60,11 @@ final class HomeWidgets {
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     final LinearLayout root;
     final TextView optimize;
+    /** The calendar card's month arrows; MainActivity moves focus to them from Optimize. */
+    final ImageView prevMonth, nextMonth;
+    /** Months away from this one that the calendar shows, from -MONTH_RANGE to MONTH_RANGE. */
+    private int monthOffset;
+    private static final int MONTH_RANGE = 12;
     private final LinearLayout weatherBody, stocksRows, calendarGrid;
     private final TextView weatherUpdated, stocksUpdated, stocksFoot, calendarTitle, calendarWeek, calendarFoot;
     private final Ring ramRing, storageRing;
@@ -140,8 +146,14 @@ final class HomeWidgets {
         LinearLayout cal = card();
         LinearLayout calHead = new LinearLayout(ctx);
         calHead.setGravity(Gravity.CENTER_VERTICAL);
+        prevMonth = monthArrow(R.drawable.ic_chevron_left, -1);
+        calHead.addView(prevMonth);
         calendarTitle = text("", 13, DIM);
-        calHead.addView(calendarTitle, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        calendarTitle.setPadding(px(4), 0, px(4), 0);
+        calHead.addView(calendarTitle);
+        nextMonth = monthArrow(R.drawable.ic_chevron_right, 1);
+        calHead.addView(nextMonth);
+        calHead.addView(new View(ctx), new LinearLayout.LayoutParams(0, 1, 1f));
         calendarWeek = text("", 10, MUTED);
         calHead.addView(calendarWeek);
         cal.addView(calHead);
@@ -172,6 +184,7 @@ final class HomeWidgets {
     }
 
     void start() {
+        monthOffset = 0;   // Home opening again shows this month
         if (!watching && WEATHER != null) {
             try {
                 ctx.getContentResolver().registerContentObserver(WEATHER, false, observer);
@@ -477,11 +490,51 @@ final class HomeWidgets {
 
     // ---- calendar ------------------------------------------------------------------------------
 
+    /** A month arrow: dim at rest, a white circle when focused, faded at the end of the range. */
+    private ImageView monthArrow(int icon, int step) {
+        ImageView a = new ImageView(ctx);
+        a.setImageResource(icon);
+        a.setFocusable(true);
+        a.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
+        a.setPadding(px(3), px(3), px(3), px(3));
+        a.setContentDescription(step < 0 ? "Previous month" : "Next month");
+        GradientDrawable circle = new GradientDrawable();
+        circle.setShape(GradientDrawable.OVAL);
+        circle.setColor(Color.WHITE);
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[] {android.R.attr.state_focused}, circle);
+        a.setBackground(bg);
+        a.setImageTintList(new android.content.res.ColorStateList(
+                new int[][] {{android.R.attr.state_focused}, {}}, new int[] {0xFF2C2628, MUTED}));
+        a.setLayoutParams(new LinearLayout.LayoutParams(px(20), px(20)));
+        a.setOnClickListener(v -> {
+            int next = Math.max(-MONTH_RANGE, Math.min(MONTH_RANGE, monthOffset + step));
+            if (next == monthOffset) return;
+            monthOffset = next;
+            showCalendar();
+        });
+        // Leaving the arrows puts the calendar back on this month.
+        a.setOnFocusChangeListener((v, has) -> main.post(() -> {
+            if (!prevMonth.hasFocus() && !nextMonth.hasFocus() && monthOffset != 0) {
+                monthOffset = 0;
+                showCalendar();
+            }
+        }));
+        return a;
+    }
+
     private void showCalendar() {
         Calendar now = Calendar.getInstance();
-        int year = now.get(Calendar.YEAR), month = now.get(Calendar.MONTH), today = now.get(Calendar.DAY_OF_MONTH);
+        now.set(Calendar.DAY_OF_MONTH, 1);
+        now.add(Calendar.MONTH, monthOffset);
+        int year = now.get(Calendar.YEAR), month = now.get(Calendar.MONTH);
+        int today = monthOffset == 0 ? Calendar.getInstance().get(Calendar.DAY_OF_MONTH) : 0;
         calendarTitle.setText(new SimpleDateFormat("MMMM yyyy", Locale.US).format(now.getTime()));
-        calendarWeek.setText("Week " + now.get(Calendar.WEEK_OF_YEAR));
+        int away = Math.abs(monthOffset);
+        calendarWeek.setText(monthOffset == 0 ? "Week " + Calendar.getInstance().get(Calendar.WEEK_OF_YEAR)
+                : (monthOffset > 0 ? "+" : "−") + away + (away == 1 ? " month" : " months"));
+        prevMonth.setAlpha(monthOffset > -MONTH_RANGE ? 1f : 0.3f);
+        nextMonth.setAlpha(monthOffset < MONTH_RANGE ? 1f : 0.3f);
         calendarGrid.removeAllViews();
         LinearLayout head = new LinearLayout(ctx);
         for (String d : new String[] {"S", "M", "T", "W", "T", "F", "S"}) head.addView(day(d, 0x4DFFFFFF, false));

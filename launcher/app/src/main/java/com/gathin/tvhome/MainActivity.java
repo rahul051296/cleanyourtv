@@ -1467,17 +1467,29 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int code = event.getKeyCode();
             View f = getCurrentFocus();
             boolean onOptimize = f == homeWidgets.optimize;
-            boolean onTile = f != null && !onOptimize && isInGrid(f);
+            boolean onPrev = f == homeWidgets.prevMonth, onNext = f == homeWidgets.nextMonth;
+            boolean onCards = onOptimize || onPrev || onNext;
+            boolean onTile = f != null && !onCards && isInGrid(f);
             if (code == KeyEvent.KEYCODE_DPAD_DOWN && onTile) {
                 homeWidgets.optimize.requestFocus();
                 return true;
             }
-            if (onOptimize && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_BACK)) {
+            if (onCards && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_BACK)) {
                 focusTile(Math.max(0, lastFocused));
                 return true;
             }
-            if (onOptimize && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
-                    || code == KeyEvent.KEYCODE_DPAD_DOWN)) return true;
+            // Along the cards: Optimize, then the calendar's previous and next month arrows.
+            if (onCards && code == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                if (onOptimize) homeWidgets.prevMonth.requestFocus();
+                else if (onPrev) homeWidgets.nextMonth.requestFocus();
+                return true;
+            }
+            if (onCards && code == KeyEvent.KEYCODE_DPAD_LEFT) {
+                if (onNext) homeWidgets.prevMonth.requestFocus();
+                else if (onPrev) homeWidgets.optimize.requestFocus();
+                return true;
+            }
+            if (onCards && code == KeyEvent.KEYCODE_DPAD_DOWN) return true;
         }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
