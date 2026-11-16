@@ -213,6 +213,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean reducedMotion;
     /** The focus zoom may overshoot (config.xml, focus_overshoot). */
     private final boolean focusOvershoot;
+    /** focus_lift: see Holder.lift. */
+    private final boolean focusLift;
+    /** The tile that last took focus, so the next one leans the way focus moved. */
+    static int liftLastPosition = -1;
     /** Package to the action its tile sends instead of the start screen (config.xml, launch_actions). */
     private final Map<String, String> launchActions;
     /** Hold OK opens the activity's tile menu (config.xml, tile_menu); false opens App info, as before. */
@@ -243,6 +247,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.showLibrary = LibraryApps.showPill(cfg.appLibrary, cfg.libraryButton, cfg.showLibraryPill);
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
+        this.focusLift = cfg.console.focusLift;
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
@@ -461,7 +466,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot, focusLift);
     }
 
     @Override
@@ -493,8 +498,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         h.name.setAlpha(focused ? 1f : restNameAlpha);
         h.card.setScaleX(focused && animations ? focusScale() : 1f);
         h.card.setScaleY(focused && animations ? focusScale() : 1f);
-        h.card.setTranslationY(focused && advancedEffects && !dockKind ? -4f * ctx.getResources().getDisplayMetrics().density : 0f);
-        h.card.setTranslationZ(focused && advancedEffects ? 8f * ctx.getResources().getDisplayMetrics().density : 0f);
+        float dp = ctx.getResources().getDisplayMetrics().density;
+        h.card.setTranslationY(focused && h.lift ? -Holder.LIFT_DP * dp
+                : focused && advancedEffects && !dockKind ? -4f * dp : 0f);
+        h.card.setTranslationZ(focused && h.lift ? Holder.LIFT_SHADOW_DP * dp : focused && advancedEffects ? 8f * dp : 0f);
+        h.card.setRotationY(0f);
         h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
         h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
         // A fully opaque banner covers the whole card (centerCrop), so the card's own fill under it is drawn for
@@ -754,6 +762,66 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return e.banner != null ? e.banner : e.icon;
     }
 
+    /** focus_lift's shine: a soft diagonal band of light that crosses the focused tile once. */
+    static final class ShineDrawable extends Drawable {
+        private final android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private android.animation.ValueAnimator animator;
+        private float progress = -1f;
+
+        void sweep() {
+            stop();
+            animator = android.animation.ValueAnimator.ofFloat(0f, 1f);
+            animator.setStartDelay(140);
+            animator.setDuration(900);
+            animator.setInterpolator(new DecelerateInterpolator(1.2f));
+            animator.addUpdateListener(a -> {
+                progress = (float) a.getAnimatedValue();
+                invalidateSelf();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator a) {
+                    progress = -1f;
+                    invalidateSelf();
+                }
+            });
+            animator.start();
+        }
+
+        void stop() {
+            if (animator != null) animator.cancel();
+            animator = null;
+            progress = -1f;
+            invalidateSelf();
+        }
+
+        @Override
+        public void draw(android.graphics.Canvas canvas) {
+            if (progress < 0f) return;
+            android.graphics.Rect b = getBounds();
+            float w = b.width(), band = w * 0.45f;
+            float x = -band + (w + 2 * band) * progress;
+            int peak = Math.round(0x38 * (float) Math.sin(Math.PI * progress));
+            paint.setShader(new android.graphics.LinearGradient(x - band, b.top, x + band, b.bottom,
+                    new int[] {0x00FFFFFF, (peak << 24) | 0xFFFFFF, 0x00FFFFFF}, null,
+                    android.graphics.Shader.TileMode.CLAMP));
+            canvas.drawRect(b, paint);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+        }
+
+        @Override
+        public void setColorFilter(android.graphics.ColorFilter cf) {
+        }
+
+        @Override
+        public int getOpacity() {
+            return android.graphics.PixelFormat.TRANSLUCENT;
+        }
+    }
+
     float focusScale() {
         return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
     }
@@ -992,11 +1060,18 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         /** Alpha of the name while the tile is not focused (always_show_names). */
         final float restNameAlpha;
         final boolean overshoot;
+        /**
+         * focus_lift: the focused tile grows, rises LIFT_DP on a shadow LIFT_SHADOW_DP deep, starts leaned a few
+         * degrees the way focus moved and settles flat, then a soft shine crosses it once. Eased out, no bounce.
+         */
+        final boolean lift;
+        static final float LIFT_DP = 8f, LIFT_SHADOW_DP = 18f, LIFT_LEAN_DEGREES = 5f;
+        private final ShineDrawable shine;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean lift) {
             super(v);
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
@@ -1009,6 +1084,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.reducedMotion = reducedMotion;
             this.restNameAlpha = restNameAlpha;
             this.overshoot = overshoot;
+            this.lift = lift && animations;
+            shine = this.lift && !reducedMotion ? new ShineDrawable() : null;
+            if (shine != null) card.setForeground(shine);
 
             final float density = v.getResources().getDisplayMetrics().density;
             card.setOutlineProvider(new ViewOutlineProvider() {
@@ -1043,6 +1121,11 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     banner.setScaleY(1f);
                     name.setAlpha(focused ? 1f : restNameAlpha);
                     name.setTranslationY(0f);
+                } else if (lift) {
+                    liftFocus(view, focused, s, density);
+                    name.animate().alpha(focused ? 1f : restNameAlpha)
+                            .translationY(focused ? density * 4f : -density * 6f)
+                            .setDuration(reducedMotion ? 0 : 220).start();
                 } else if (reducedMotion) {
                     // A short zoom with no hardware layer: building a layer for so short an animation costs more
                     // frames than it saves. The name just appears instead of fading.
@@ -1078,6 +1161,31 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                     listener.onTileFocused(pos, view);
                 }
             });
+        }
+
+        /** focus_lift's motion for one tile; see the field. */
+        private void liftFocus(View view, boolean focused, float scale, float density) {
+            int pos = getBindingAdapterPosition();
+            if (focused) {
+                int from = liftLastPosition;
+                liftLastPosition = pos;
+                if (!reducedMotion && from >= 0 && pos >= 0 && from != pos) {
+                    // Leaned away from where focus came from, it turns to face you as it rises.
+                    view.setCameraDistance(9000f * density);
+                    view.setRotationY(pos > from ? -LIFT_LEAN_DEGREES : LIFT_LEAN_DEGREES);
+                }
+            }
+            view.animate().scaleX(scale).scaleY(scale)
+                    .translationY(focused ? -LIFT_DP * density : 0f)
+                    .translationZ(focused ? LIFT_SHADOW_DP * density : 0f)
+                    .rotationY(0f)
+                    .setDuration(reducedMotion ? Motion.REDUCED_MS : focused ? 320 : 200)
+                    .setInterpolator(new DecelerateInterpolator(focused ? 2.2f : 1.5f))
+                    .withLayer().start();
+            if (shine != null) {
+                if (focused) shine.sweep();
+                else shine.stop();
+            }
         }
     }
 }

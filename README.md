@@ -24,6 +24,7 @@ CleanYourTV does is still here and unchanged; this fork adds the Dashboard on to
 | Stocks card | Price and day change for up to four tickers (delayed). Hidden until you add some |
 | Calendar card | The month, with today marked and US holidays |
 | App opening zoom | The app grows out of its tile when it opens |
+| Focus lift | The selected app rises on a soft shadow, turns to face you and catches a passing shine |
 
 ## What it needs, and why
 
@@ -86,6 +87,7 @@ The Dashboard is switched on by these keys in a theme's `config.json`, on top of
 | `weather_place` | text | A place name to show instead of the add-on's |
 | `app_open_zoom` | `0` or `1` | Apps grow out of their tile when they open |
 | `hero_compact` | `0` or `1` | The app name and "Last opened" sit closer together |
+| `focus_lift` | `0` or `1` | The focused app rises on a soft shadow, leans the way you moved and catches a passing shine |
 | `title_scale`, `font_scale` | percent | The big app name, and the clock and date |
 
 ## Tested on

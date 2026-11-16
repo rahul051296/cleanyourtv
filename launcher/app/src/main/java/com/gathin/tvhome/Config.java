@@ -214,6 +214,8 @@ final class Config {
         final boolean appOpenZoom;
         /** hero_compact 1: the big app name and its line sit closer together. */
         final boolean heroCompact;
+        /** focus_lift 1: the focused tile rises on a soft shadow, leans the way focus moved and catches a shine. */
+        final boolean focusLift;
         /** console_row_top: dp from the top of the screen to the row of banners. */
         final int rowTop;
         /** console_button_scale, font_scale, title_scale: percent of the usual size. */
@@ -229,6 +231,7 @@ final class Config {
             favouritesOnly = integer(json, "favourites_only", 0, 0, 1) == 1;
             appOpenZoom = integer(json, "app_open_zoom", 0, 0, 1) == 1;
             heroCompact = integer(json, "hero_compact", 0, 0, 1) == 1;
+            focusLift = integer(json, "focus_lift", 0, 0, 1) == 1;
             rowTop = integer(json, "console_row_top", 130, 0, 400);
             buttonScale = integer(json, "console_button_scale", 75, 40, 100);
             fontScale = integer(json, "font_scale", 100, 50, 150);

@@ -43,6 +43,7 @@
   "title_scale": 55,
   "console_row_top": 0,
   "app_open_zoom": 1,
+  "focus_lift": 1,
   "console_button_scale": 75,
   "app_library": true,
   "library_ok_opens": true,
