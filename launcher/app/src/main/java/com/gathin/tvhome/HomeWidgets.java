@@ -270,7 +270,7 @@ final class HomeWidgets {
         int code = (Integer) w[3];
         LinearLayout now = new LinearLayout(ctx);
         now.setGravity(Gravity.CENTER_VERTICAL);
-        now.addView(text(WeatherLine.symbol(code, (Boolean) w[4]) + "︎", 26, BLUE));
+        now.addView(text(WeatherLine.symbol(code, (Boolean) w[4]) + "︎", 26, symbolColor(code, (Boolean) w[4])));
         TextView temp = text(" " + w[0] + "°", 34, Color.WHITE);
         now.addView(temp);
         LinearLayout desc = new LinearLayout(ctx);
@@ -304,7 +304,8 @@ final class HomeWidgets {
                     JSONObject h = hours.getJSONObject(i);
                     SpannableStringBuilder sb = new SpannableStringBuilder();
                     append(sb, hourLabel(h.getString("time")) + "\n", DIM);
-                    append(sb, WeatherLine.symbol(h.getInt("code"), h.optInt("is_day", 1) == 1) + "︎\n", BLUE);
+                    boolean hourDay = h.optInt("is_day", 1) == 1;
+                    append(sb, WeatherLine.symbol(h.getInt("code"), hourDay) + "︎\n", symbolColor(h.getInt("code"), hourDay));
                     append(sb, h.getInt("temp") + "°", Color.WHITE);
                     TextView t = text("", 12, Color.WHITE);
                     t.setText(sb);
@@ -622,6 +623,15 @@ final class HomeWidgets {
 
     private static String gb(long bytes) {
         return String.format(Locale.US, "%.1f", bytes / 1_073_741_824f);
+    }
+
+    /** The weather symbol's colour: a gold sun, a pale moon, grey cloud, blue rain, white snow, gold lightning. */
+    static int symbolColor(int code, boolean day) {
+        if (code <= 2) return day ? GOLD : DIM;                                       // clear, partly cloudy
+        if (code == 3 || code == 45 || code == 48) return DIM;                        // overcast, fog
+        if (code >= 71 && code <= 77 || code == 85 || code == 86) return Color.WHITE; // snow
+        if (code >= 95) return GOLD;                                                  // thunderstorm
+        return BLUE;                                                                  // drizzle, rain, showers
     }
 
     private static void append(SpannableStringBuilder sb, String s, int color) {
