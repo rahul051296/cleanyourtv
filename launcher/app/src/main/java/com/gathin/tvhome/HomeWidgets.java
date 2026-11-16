@@ -149,24 +149,28 @@ final class HomeWidgets {
         prevMonth = monthArrow(R.drawable.ic_chevron_left, -1);
         calHead.addView(prevMonth);
         calendarTitle = text("", 13, DIM);
-        calendarTitle.setPadding(px(3), 0, px(3), 0);
+        calendarTitle.setPadding(px(4), 0, px(4), 0);
         calHead.addView(calendarTitle);
         nextMonth = monthArrow(R.drawable.ic_chevron_right, 1);
         calHead.addView(nextMonth);
-        // "Week 47" or "+2 months" takes the space left and shrinks to fit it, so the arrows never push it off.
-        calendarWeek = oneLine(text("", 10, MUTED));
-        calendarWeek.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams wp = new LinearLayout.LayoutParams(0, calendarWeek.getLayoutParams().height, 1f);
-        wp.leftMargin = px(4);
-        calHead.addView(calendarWeek, wp);
         cal.addView(calHead);
         calendarGrid = new LinearLayout(ctx);
         calendarGrid.setOrientation(LinearLayout.VERTICAL);
         LinearLayout.LayoutParams gp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
         gp.topMargin = px(4);
         cal.addView(calendarGrid, gp);
+        // The footer: the month's holiday on the left, "Week 47" or "+2 months" on the right.
+        LinearLayout calFoot = new LinearLayout(ctx);
+        calFoot.setGravity(Gravity.CENTER_VERTICAL);
         calendarFoot = text("", 10, FAINT);
-        cal.addView(calendarFoot);
+        calendarFoot.setMaxLines(1);
+        calendarFoot.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        calFoot.addView(calendarFoot, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        calendarWeek = text("", 10, MUTED);
+        calendarWeek.setMaxLines(1);
+        calendarWeek.setPadding(px(6), 0, 0, 0);
+        calFoot.addView(calendarWeek);
+        cal.addView(calFoot);
 
         observer = new ContentObserver(main) {
             @Override
@@ -576,9 +580,8 @@ final class HomeWidgets {
             append(sb, "● ", GOLD);
             append(sb, holiday + " · " + new SimpleDateFormat("EEE d", Locale.US).format(c.getTime()), FAINT);
             calendarFoot.setText(sb);
-            calendarFoot.setVisibility(View.VISIBLE);
         } else {
-            calendarFoot.setVisibility(View.GONE);
+            calendarFoot.setText("");
         }
     }
 
