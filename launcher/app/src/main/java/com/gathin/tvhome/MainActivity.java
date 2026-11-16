@@ -520,6 +520,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         sky = findViewById(R.id.sky);
         sky.setIntensity(cfg.skyIntensity);
         glass = findViewById(R.id.glass);
+        // focus_lift: the risen tile and its shadow mark focus, as on Apple TV, so the outline is not drawn.
+        if (console.focusLift && cfg.animations) glass.setVisibility(View.INVISIBLE);
         glass.setStyle(cfg.glassStyle);
         if (festive) glass.setAccent(festival.accentColor());
         ambient = findViewById(R.id.ambient);

@@ -163,7 +163,7 @@ A new key needs one there in the same pull request.
 | `console_button_scale` | 40 to 100 | With `console_layout`, the size of the buttons in the glass pill, in percent; 75 by default |
 | `favourites_only` | 0 to 1 | 1: Home holds only `dock_apps` and the apps the owner adds from All apps; 0 by default |
 | `app_open_zoom` | 0 to 1 | 1: an app grows out of the tile it was opened from; 0 by default |
-| `focus_lift` | 0 to 1 | 1: the focused tile rises on a soft shadow, starts leaned the way focus moved and settles flat, and a soft shine crosses it once; 0 by default |
+| `focus_lift` | 0 to 1 | 1: the focused tile rises on a soft shadow, starts leaned the way focus moved and settles flat, and a soft shine crosses it once, in place of the focus outline; 0 by default |
 | `hero_compact` | 0 to 1 | 1: "Last opened" and the dots sit closer under the big app name; 0 by default |
 | `title_scale` | 40 to 150 | The big app name, in percent; 100 by default |
 | `font_scale` | 50 to 150 | The clock and date, in percent; 100 by default |
