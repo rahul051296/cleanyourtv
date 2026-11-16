@@ -1890,6 +1890,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // advanced_effects lifts a focused grid tile by 4dp and the glass follows it; dock tiles stay put (#2135).
         boolean lifted = advancedEffects && !DockSlots.inDockRow(dockRow, singleRow, position, COLUMNS);
         float y = r.exactCenterY() - h / 2f - (lifted ? 4f * density : 0f);
+        // focus_lift raises every focused tile, so the highlight rises with it.
+        if (console.focusLift && animations) y -= AppAdapter.Holder.LIFT_DP * density;
 
         ViewGroup.LayoutParams lp = glass.getLayoutParams();
         if (lp.width != (int) w || lp.height != (int) h || card.getWidth() != glassCardW) {
