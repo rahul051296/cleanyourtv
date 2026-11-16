@@ -149,13 +149,16 @@ final class HomeWidgets {
         prevMonth = monthArrow(R.drawable.ic_chevron_left, -1);
         calHead.addView(prevMonth);
         calendarTitle = text("", 13, DIM);
-        calendarTitle.setPadding(px(4), 0, px(4), 0);
+        calendarTitle.setPadding(px(3), 0, px(3), 0);
         calHead.addView(calendarTitle);
         nextMonth = monthArrow(R.drawable.ic_chevron_right, 1);
         calHead.addView(nextMonth);
-        calHead.addView(new View(ctx), new LinearLayout.LayoutParams(0, 1, 1f));
-        calendarWeek = text("", 10, MUTED);
-        calHead.addView(calendarWeek);
+        // "Week 47" or "+2 months" takes the space left and shrinks to fit it, so the arrows never push it off.
+        calendarWeek = oneLine(text("", 10, MUTED));
+        calendarWeek.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams wp = new LinearLayout.LayoutParams(0, calendarWeek.getLayoutParams().height, 1f);
+        wp.leftMargin = px(4);
+        calHead.addView(calendarWeek, wp);
         cal.addView(calHead);
         calendarGrid = new LinearLayout(ctx);
         calendarGrid.setOrientation(LinearLayout.VERTICAL);
@@ -506,7 +509,7 @@ final class HomeWidgets {
         a.setBackground(bg);
         a.setImageTintList(new android.content.res.ColorStateList(
                 new int[][] {{android.R.attr.state_focused}, {}}, new int[] {0xFF2C2628, MUTED}));
-        a.setLayoutParams(new LinearLayout.LayoutParams(px(20), px(20)));
+        a.setLayoutParams(new LinearLayout.LayoutParams(px(18), px(18)));
         a.setOnClickListener(v -> {
             int next = Math.max(-MONTH_RANGE, Math.min(MONTH_RANGE, monthOffset + step));
             if (next == monthOffset) return;
