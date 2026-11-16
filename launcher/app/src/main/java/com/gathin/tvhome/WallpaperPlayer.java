@@ -91,10 +91,97 @@ final class WallpaperPlayer {
         names = config.wallpaperCaptions && config.wallpaperEnabled && !files.isEmpty()
                 ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
         caption = names.isEmpty() ? null : makeCaption(context, root);
+        dockMap = config.console.dockWallpapers;
         if (config.wallpaperEnabled && !files.isEmpty()) {
             root.addView(image, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
             showFirst();
+            if (!dockMap.isEmpty()) preloadDockPictures();
+        }
+    }
+
+    // ---- dock_wallpapers: the picture follows the focused dock app, cross-faded -------------------------------
+
+    /** config.json "dock_wallpapers": {"package": "file in wallpapers/"}; empty when absent or unreadable. */
+    private final Map<String, String> dockMap;
+    /** Decoded dock pictures by file name, kept so moving along the dock never waits for a decode. */
+    private final Map<String, Bitmap> dockCache = new java.util.HashMap<>();
+    /** The file the latest dock focus asked for; a slower decode for an earlier app is dropped. */
+    private String dockWanted = "";
+    private static final int CROSSFADE_MS = 450;
+    /** dock_wallpapers key for the picture shown while focus is in the app grid below the dock. */
+    static final String GRID_KEY = "_grid";
+
+    private File dockFile(String name) {
+        for (File f : files) if (f.getName().equals(name)) return f;
+        return null;
+    }
+
+    /** Decodes every mapped picture in the background so the first move along the dock is already instant. */
+    private void preloadDockPictures() {
+        for (String name : new java.util.LinkedHashSet<>(dockMap.values())) {
+            File file = dockFile(name);
+            if (file == null || dockCache.containsKey(name)) continue;
+            decoder.execute(() -> {
+                Bitmap bitmap = closed ? null : decode(file);
+                root.post(() -> {
+                    if (bitmap == null) return;
+                    if (closed || dockCache.containsKey(name)) {
+                        if (bitmap != current) bitmap.recycle();
+                        return;
+                    }
+                    dockCache.put(name, bitmap);
+                });
+            });
+        }
+    }
+
+    /** Called when a dock tile takes focus: cross-fades to that app's picture, if the theme maps one. */
+    void focusApp(String pkg) {
+        if (dockMap.isEmpty() || closed || pkg == null) return;
+        String name = dockMap.get(pkg);
+        if (name == null || name.equals(displayed)) return;
+        File file = dockFile(name);
+        if (file == null) return;
+        dockWanted = name;
+        Bitmap cached = dockCache.get(name);
+        if (cached != null) {
+            crossfadeTo(cached, name);
+            return;
+        }
+        decoder.execute(() -> {
+            Bitmap bitmap = decode(file);
+            root.post(() -> {
+                if (bitmap == null || closed) return;
+                dockCache.put(name, bitmap);
+                if (name.equals(dockWanted) && active) crossfadeTo(bitmap, name);
+            });
+        });
+    }
+
+    private void crossfadeTo(Bitmap bitmap, String name) {
+        Bitmap old = current;
+        current = bitmap;
+        displayed = name;
+        root.setBackground(null);
+        android.graphics.drawable.Drawable from = image.getDrawable();
+        if (from == null || old == null || old == bitmap) {
+            image.setImageBitmap(bitmap);
+        } else {
+            android.graphics.drawable.TransitionDrawable fade = new android.graphics.drawable.TransitionDrawable(
+                    new android.graphics.drawable.Drawable[]{from,
+                            new android.graphics.drawable.BitmapDrawable(image.getResources(), bitmap)});
+            fade.setCrossFadeEnabled(true);
+            image.setImageDrawable(fade);
+            fade.startTransition(CROSSFADE_MS);
+            image.postDelayed(() -> {
+                if (current == bitmap && image.getDrawable() == fade) image.setImageBitmap(bitmap);
+            }, CROSSFADE_MS + 50);
+        }
+        showCaption(true);
+        preferences.edit().putString("image", name).putLong("changed", System.currentTimeMillis()).apply();
+        if (old != null && old != bitmap && !dockCache.containsValue(old)) {
+            image.postDelayed(old::recycle, CROSSFADE_MS + 500);
         }
     }
 
@@ -115,6 +202,7 @@ final class WallpaperPlayer {
                 // The picture covers the whole screen: the root's plain colour under it is overdraw.
                 root.setBackground(null);
                 displayed = first.getName();
+                if (dockMap.containsValue(displayed)) dockCache.put(displayed, bitmap);
                 showCaption(false);
                 if (!displayed.equals(previous)) {
                     preferences.edit().putString("image", displayed)
@@ -145,6 +233,7 @@ final class WallpaperPlayer {
         // let Android reclaim its native buffer after rendering releases it instead of recycling it mid-frame.
         current = null;
         displayed = "";
+        dockCache.clear();
         root.setBackgroundColor(backgroundColor);
     }
 
@@ -167,6 +256,8 @@ final class WallpaperPlayer {
 
     void update() {
         if (!active || closed || loading || files.isEmpty()) return;
+        // dock_wallpapers: the dock focus picks the picture; the timer only puts one back after a memory release.
+        if (!dockMap.isEmpty() && current != null) return;
         String previous = preferences.getString("image", "");
         // A picture outside the time of day's group (the group changed) is replaced at once, not after the interval.
         List<File> playable = playable();
@@ -266,7 +357,7 @@ final class WallpaperPlayer {
         // The wallpaper covers the whole root; avoid drawing the fallback colour under it.
         root.setBackground(null);
         image.setImageBitmap(bitmap);
-        if (old != null && old != bitmap) image.postDelayed(old::recycle, 500);
+        if (old != null && old != bitmap && !dockCache.containsValue(old)) image.postDelayed(old::recycle, 500);
     }
 
     private Bitmap decode(File file) {

@@ -337,6 +337,24 @@
                 android:focusable="false"
                 android:visibility="gone" />
 
+            <!-- Shown only when a theme's weather_line names a weather add-on: "☁ 8°  H 11° L 4°". -->
+            <TextView
+                android:id="@+id/weather"
+                android:layout_width="wrap_content"
+                android:layout_below="@id/leftBlock"
+                android:layout_alignStart="@id/leftBlock"
+                android:gravity="start"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:layout_marginTop="6dp"
+                android:singleLine="true"
+                android:textColor="#D9FFFFFF"
+                android:textSize="18sp"
+                android:fontFamily="@string/font_regular"
+                android:letterSpacing="0.04"
+                android:focusable="false"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:id="@+id/topButtons"
                 android:layout_width="wrap_content"

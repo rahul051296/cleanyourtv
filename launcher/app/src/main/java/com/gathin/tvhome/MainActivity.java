@@ -22,6 +22,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Typeface;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.Shader;
@@ -202,6 +203,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private TextView raceKicker, raceHeadline, raceSessions;
     /** game_day: each team's next game from an add-on, rotating in the race panel; null when the key is off. */
     private GameDay gameDay;
+    private WeatherLine weatherLine;
+    private HomeWidgets homeWidgets;
     private View raceBar;
     private LinearLayout racePager;
     private long rotationStart;
@@ -462,6 +465,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         density = getResources().getDisplayMetrics().density;
         // config.xml, overlaid by config.json from a pushed theme (see Config and tools/theme.sh).
         Config cfg = Config.load(this);
+        console = cfg.console;
         homeAppKeys = RemoteKeys.parseAppKeys(cfg.appKeys);
         clockFormat = cfg.clockFormat;
         ClockFormat.apply(getWindow().getDecorView(), clockFormat);
@@ -544,6 +548,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // still follows the dock.
         if (!cfg.dockTitle) hero.setVisibility(View.GONE);
         greeting = findViewById(R.id.greeting);
+        applyThemeFont();
+        applyConsoleHeader();
         clockBlock = findViewById(R.id.leftBlock);
         clockRefresh = new ClockRefresh(clockBlock);
         greetingColor = greeting.getCurrentTextColor();
@@ -585,6 +591,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         raceBar = findViewById(R.id.raceBar);
         racePager = findViewById(R.id.racePager);
         gameDay = GameDay.create(this, cfg.gameDay, handler, this::updatePanel);
+        TextView weatherView = findViewById(R.id.weather);
+        if (consoleLayout) {
+            homeWidgets = new HomeWidgets(this, handler, !ClockFormat.is24(this, clockFormat),
+                    WeatherLine.authority(this, console.weatherLine), console.weatherPlace);
+            homeWidgets.attach((android.widget.FrameLayout) findViewById(android.R.id.content), 56, 30);
+        } else weatherLine = WeatherLine.create(this, console.weatherLine, handler, line -> {
+            weatherView.setText(line == null ? "" : line);
+            weatherView.setVisibility(line == null ? View.GONE : View.VISIBLE);
+        });
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();
         showStats = cfg.showStats;
@@ -726,6 +741,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             // A single row never shows the names under its tiles (the title above the row names the app), so the
             // 7dp gap and 22dp label item_app.xml keeps for them would only lift the row: sit it that much lower.
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
+            if (consoleLayout) {
+                want = (int) (console.rowTop * density);
+            }
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
                 // A vertical grid parks the dock on the new padding line by scrolling (onTileFocused); a sideways
@@ -1138,6 +1156,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
         if (showStats) startStats();
         if (gameDay != null) gameDay.start();
+        if (weatherLine != null) weatherLine.start();
+        if (homeWidgets != null) homeWidgets.start();
         sky.update();
         wallpaperPlayer.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
@@ -1323,6 +1343,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         startPending = null;   // leaving Home before the network came back: the boot's app stays closed
         stopStats();
         if (gameDay != null) gameDay.stop();
+        if (weatherLine != null) weatherLine.stop();
+        if (homeWidgets != null) homeWidgets.stop();
         handler.removeCallbacks(turnTick);
         if (lamp != null) lamp.stop();
         cancelPendingFocusScroll();
@@ -1391,6 +1413,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         RemoteKeys.release(this);
         cancelHoldOk();
         if (gameDay != null) gameDay.shutdown();
+        if (weatherLine != null) weatherLine.shutdown();
+        if (homeWidgets != null) homeWidgets.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
@@ -1439,6 +1463,22 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (homeIgnoreChannelKeys && RemoteKeys.isChannelKey(event.getKeyCode())) return true;
+        if (homeWidgets != null && !reordering && event.getAction() == KeyEvent.ACTION_DOWN) {
+            int code = event.getKeyCode();
+            View f = getCurrentFocus();
+            boolean onOptimize = f == homeWidgets.optimize;
+            boolean onTile = f != null && !onOptimize && isInGrid(f);
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN && onTile) {
+                homeWidgets.optimize.requestFocus();
+                return true;
+            }
+            if (onOptimize && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_BACK)) {
+                focusTile(Math.max(0, lastFocused));
+                return true;
+            }
+            if (onOptimize && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                    || code == KeyEvent.KEYCODE_DPAD_DOWN)) return true;
+        }
         // Vendor keys (TCL Netflix button, 4062) never reach the key services, only the focused window, so their
         // "hold:" entries run here too or nowhere. Only while resumed: onPause releases Home's holds, and a DOWN
         // taken after that would arm one nothing releases.
@@ -1889,11 +1929,21 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 if (!animations || reducedMotion) grid.scrollBy(0, dy);
                 else grid.smoothScrollBy(0, dy);
             }
+            consoleCardBottom = scroll ? r.bottom - dy : r.bottom;
+            if (consoleLayout && singleRow) {
+                int dx = item.getLeft() - grid.getPaddingLeft();
+                if (dx != 0) {
+                    if (!animations || reducedMotion) grid.scrollBy(dx, 0);
+                    else grid.smoothScrollBy(dx, 0, new android.view.animation.DecelerateInterpolator(2f), 320);
+                }
+            }
             showHero(position, scroll ? r.top - dy : r.top);
+            wallpaperPlayer.focusApp(adapter.packageAt(position));
         } else {
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);
+            wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
             // Scroll just enough so the whole glass (not only the tile) is visible.
             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
             grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
@@ -1922,12 +1972,70 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         }
     }
 
+    private float headerScale = 1f, titleScale = 1f;
+    /** Theme key console_layout 1: the app row at the top, the title and artwork under it, the clock top right. */
+    private boolean consoleLayout;
+    /** The theme's Dashboard keys, from Config. */
+    private Config.Console console = Config.Console.NONE;
+    private float consoleCardBottom;
+
+    private boolean isInGrid(View v) {
+        for (android.view.ViewParent p = v.getParent(); p != null; p = p.getParent()) if (p == grid) return true;
+        return false;
+    }
+
+    private void applyConsoleHeader() {
+        consoleLayout = console.layout;
+        if (!consoleLayout) return;
+        // The clock stays top left; Inputs, Wi-Fi, themes and Settings float top right in one glass pill.
+        View buttons = findViewById(R.id.topButtons);
+        android.graphics.drawable.GradientDrawable pill = new android.graphics.drawable.GradientDrawable();
+        pill.setColor(0x24FFFFFF);
+        pill.setStroke(Math.max(1, Math.round(density)), 0x47FFFFFF);
+        pill.setCornerRadius(40 * density);
+        buttons.setBackground(pill);
+        int pad = Math.round(6 * density);
+        buttons.setPadding(pad, pad, pad, pad);
+        // The pill keeps its size; the buttons inside it draw smaller (console_button_scale percent).
+        float scale = console.buttonScale / 100f;
+        if (buttons instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) buttons;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                g.getChildAt(i).setScaleX(scale);
+                g.getChildAt(i).setScaleY(scale);
+            }
+        }
+    }
+
+    /** A theme's font.ttf, if it has one, on the clock, greeting, date and the big app name; tiles keep Outfit. */
+    private void applyThemeFont() {
+        // font_scale (header) and title_scale (the big app name), in percent; 100 keeps the layout's sizes.
+        headerScale = console.fontScale / 100f;
+        titleScale = console.titleScale / 100f;
+        if (headerScale != 1f) {
+            for (int id : new int[]{R.id.clock, R.id.ampm, R.id.greeting, R.id.date, R.id.weather}) {
+                View v = findViewById(id);
+                if (v instanceof TextView) {
+                    TextView t = (TextView) v;
+                    t.setTextSize(TypedValue.COMPLEX_UNIT_PX, t.getTextSize() * headerScale);
+                }
+            }
+        }
+        if (titleScale != 1f) heroName.setTextSize(TypedValue.COMPLEX_UNIT_PX, heroName.getTextSize() * titleScale);
+        Typeface face = ThemeFiles.font(this);
+        if (face == null) return;
+        for (int id : new int[]{R.id.clock, R.id.ampm, R.id.greeting, R.id.date, R.id.heroName, R.id.weather}) {
+            View v = findViewById(id);
+            if (v instanceof TextView) ((TextView) v).setTypeface(face);
+        }
+    }
+
     // ---- top shelf -------------------------------------------------------------------------------
 
     private void showHero(int position, float dockTopInRoot) {
         String label = adapter.labelAt(position);
         int color = adapter.ambientColorAt(position);
-        float y = dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
+        float y = consoleLayout ? consoleCardBottom + 40 * density : dockTopInRoot - 14 * density - 26 * density - hero.getHeight();
         boolean changed = !label.contentEquals(heroName.getText());
         if (cinematic && heroArtAlpha > 0f) showHeroArt(position);
 
@@ -2007,9 +2115,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
      * scrimPercent of its strength (cinematic_scrim). cinematic_art 0 leaves the artwork out, 0 percent the scrim.
      */
     private void setUpCinematicShelf(int scrimPercent) {
-        heroName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 68f);
+        heroName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 68f * titleScale);
         heroName.setLetterSpacing(-0.025f);
         heroMeta.setVisibility(View.INVISIBLE);   // keeps its height, so the name does not jump when it fills in
+        // Theme key hero_compact 1: "Last opened" and the dots sit closer under the name.
+        if (console.heroCompact) {
+            float dp = getResources().getDisplayMetrics().density;
+            ((ViewGroup.MarginLayoutParams) heroMeta.getLayoutParams()).topMargin = Math.round(4 * dp);
+            ((ViewGroup.MarginLayoutParams) heroDots.getLayoutParams()).topMargin = Math.round(8 * dp);
+        }
         heroDots.setVisibility(heroDotsShown ? View.VISIBLE : View.GONE);
         heroArt.setVisibility(heroArtAlpha > 0f ? View.VISIBLE : View.GONE);
         // One stretched bitmap: apply its alpha while drawing instead of through an offscreen buffer.
@@ -2084,7 +2198,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroMeta.setVisibility(View.INVISIBLE);
             return;
         }
-        String rel = LastOpened.describe(this, when);
+        String rel = LastOpened.describe(this, when, clockFormat);
         String text = getString(R.string.last_opened, rel);
         SpannableString line = new SpannableString(text);
         int at = text.indexOf(rel);
@@ -2493,6 +2607,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         libraryFocusPending = false;
         hideGlass();
         hideHero();
+        // console_layout: the All apps tile shows the theme's grid picture (dock_wallpapers "_grid").
+        if (consoleLayout) wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
     }
 
     /**

@@ -198,6 +198,9 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private int docked, emptySlots;
     /** Never shown as tiles (res/values/config.xml, hidden_apps). */
     private final Set<String> hidden;
+    private final boolean favouritesOnly;
+    /** app_open_zoom: the app grows out of its tile. */
+    private final boolean appOpenZoom;
     /** Apps pre-seeded into the App library's "added" set (config.xml library_apps); empty by default. */
     private final Set<String> libraryPreload;
     private final boolean animations;
@@ -226,9 +229,13 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.ctx = ctx;
         this.listener = listener;
         this.dockSize = dockSize;
+        this.consoleLibrary = cfg.console.layout;
         this.favourites = cfg.dockApps;
         this.fillDock = cfg.fillDock;
         this.hidden = new HashSet<>(cfg.hiddenApps);
+        // favourites_only 1: Home holds the theme's dock_apps and whatever the owner adds from All apps, nothing else.
+        this.favouritesOnly = cfg.console.favouritesOnly;
+        this.appOpenZoom = cfg.console.appOpenZoom;
         this.libraryPreload = new HashSet<>(cfg.libraryApps);
         this.animations = cfg.animations;
         this.advancedEffects = cfg.animations && cfg.advancedEffects;
@@ -287,7 +294,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (ri.activityInfo == null) continue;
             String pkg = ri.activityInfo.packageName;
             if (pkg.equals(ctx.getPackageName()) || !ri.activityInfo.exported
-                    || !LibraryApps.visible(tvPackages.contains(pkg), hidden.contains(pkg), added.contains(pkg), removed.contains(pkg))) continue;
+                    || !LibraryApps.visible(tvPackages.contains(pkg),
+                    hidden.contains(pkg) || favouritesOnly && !favourites.contains(pkg), added.contains(pkg), removed.contains(pkg))) continue;
             ComponentName component = new ComponentName(pkg, ri.activityInfo.name);
             Cards.Card card = cardByPkg.get(pkg);
             if (card != null && !card.component.equals(component)) continue;   // the card stands in for this tile
@@ -398,6 +406,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == 1 && consoleLibrary) return allAppsTile(parent);
         if (viewType == 1) {
             View row = LayoutInflater.from(ctx).inflate(R.layout.row_app_library, parent, false);
             View button = row.findViewById(R.id.btnLibrary);
@@ -509,7 +518,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             h.label.setText(e.label);
             h.label.setVisibility(uniformTiles ? View.GONE : View.VISIBLE);
         }
-        h.card.setOnClickListener(v -> launch(e));
+        h.card.setOnClickListener(v -> {
+            launchSource = v;
+            launch(e);
+        });
         h.card.setOnLongClickListener(v -> {
             if (tileMenu) {
                 int pos = h.getBindingAdapterPosition();
@@ -528,6 +540,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
     /** Opens the tile's activity by explicit component, with no extras: a card can name nothing else. */
     @SuppressWarnings("deprecation")
+    private View launchSource;
+
     private void launch(Entry e) {
         if (e.kind == Entry.HOME_SETTINGS) {
             ctx.startActivity(new Intent(ctx, HomeSettingsActivity.class)
@@ -553,7 +567,15 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             if (ctx.getPackageManager().resolveActivity(byAction, 0) != null) i = byAction;
         }
         try {
-            ctx.startActivity(i);
+            View src = launchSource;
+            launchSource = null;
+            if (src != null && appOpenZoom) {
+                // Android grows the app's window out of the tile it was opened from.
+                ctx.startActivity(i, android.app.ActivityOptions
+                        .makeScaleUpAnimation(src, 0, 0, src.getWidth(), src.getHeight()).toBundle());
+            } else {
+                ctx.startActivity(i);
+            }
             if (cinematic) LastOpened.record(ctx, e.pkg);
             if (advancedEffects && !reducedMotion && ctx instanceof Activity) {
                 ((Activity) ctx).overridePendingTransition(R.anim.app_open_enter, R.anim.app_open_exit);
@@ -569,6 +591,62 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     int appCount() { return items.size(); }
+
+    /** console_layout: the library is an "All apps" tile the size of the others at the end of the row. */
+    private final boolean consoleLibrary;
+
+    private RecyclerView.ViewHolder allAppsTile(ViewGroup parent) {
+        View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_app, parent, false);
+        float density = parent.getResources().getDisplayMetrics().density;
+        int width = parent.getWidth() > 0 ? parent.getWidth() : parent.getMeasuredWidth();
+        int inner = width - parent.getPaddingLeft() - parent.getPaddingRight();
+        int w = tileWidthPx(inner, parent.getHeight(), dockSize, rowsBelowDock, dockTitle, dockRow, density), h = tileHeightPx(w);
+        View card = v.findViewById(R.id.card);
+        ViewGroup.LayoutParams cardLp = card.getLayoutParams();
+        cardLp.width = w;
+        cardLp.height = h;
+        card.setLayoutParams(cardLp);
+        v.findViewById(R.id.name).setVisibility(View.GONE);
+        if (singleRow) v.getLayoutParams().width = inner / dockSize;
+        // The library's focus code looks the tile up by this id.
+        card.setId(R.id.btnLibrary);
+        android.graphics.drawable.GradientDrawable idle = new android.graphics.drawable.GradientDrawable();
+        idle.setColor(0x29FFFFFF);
+        idle.setStroke(Math.max(1, Math.round(density)), 0x52FFFFFF);
+        idle.setCornerRadius(10 * density);
+        android.graphics.drawable.GradientDrawable on = new android.graphics.drawable.GradientDrawable();
+        on.setColor(0x47FFFFFF);
+        on.setStroke(Math.round(3 * density), 0xFFFFFFFF);
+        on.setCornerRadius(10 * density);
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[] {android.R.attr.state_focused}, on);
+        bg.addState(new int[] {}, idle);
+        card.setBackground(bg);
+        ImageView icon = v.findViewById(R.id.icon);
+        icon.setImageResource(R.drawable.ic_apps_pill);
+        icon.setVisibility(View.VISIBLE);
+        android.widget.FrameLayout.LayoutParams ilp = (android.widget.FrameLayout.LayoutParams) icon.getLayoutParams();
+        ilp.width = ilp.height = Math.round(Math.min(30 * density, h * 0.3f));
+        ilp.bottomMargin = Math.round(h * 0.16f);
+        icon.setLayoutParams(ilp);
+        TextView label = v.findViewById(R.id.label);
+        label.setText(R.string.all_apps);
+        label.setVisibility(View.VISIBLE);
+        card.setOnClickListener(x -> listener.onLibraryRequested());
+        card.setOnFocusChangeListener((x, focused) -> {
+            if (focused) listener.onLibraryFocused();
+            card.animate().scaleX(focused ? 1.06f : 1f).scaleY(focused ? 1.06f : 1f).setDuration(160).start();
+        });
+        card.setOnKeyListener((x, key, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (key == KeyEvent.KEYCODE_DPAD_UP) {
+                listener.onLibraryUp();
+                return true;
+            }
+            return key == KeyEvent.KEYCODE_DPAD_RIGHT;   // the end of the row
+        });
+        return new RecyclerView.ViewHolder(v) { };
+    }
 
     boolean isLibraryAt(int position) { return showLibrary && position == items.size(); }
 

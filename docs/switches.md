@@ -31,6 +31,17 @@ rule sit on its wanted list until a screenshot arrives.
 | `sky_intensity` | <img src="sky-sunset.jpg" width="320" alt="sky_intensity on a TV"> |
 | `wallpaper_rotation_minutes` | <img src="../themes/scenes/screenshot.jpg" width="320" alt="wallpaper_rotation_minutes on a TV"> |
 | `festival` | <img src="../themes/dussehra/screenshot.jpg" width="320" alt="festival on a TV"> |
+| `console_layout` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="console_layout on a TV"> |
+| `console_row_top` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="console_row_top on a TV"> |
+| `console_button_scale` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="console_button_scale on a TV"> |
+| `favourites_only` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="favourites_only on a TV"> |
+| `dock_wallpapers` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="dock_wallpapers on a TV"> |
+| `weather_line` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="weather_line on a TV"> |
+| `weather_place` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="weather_place on a TV"> |
+| `app_open_zoom` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="app_open_zoom on a TV"> |
+| `hero_compact` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="hero_compact on a TV"> |
+| `title_scale` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="title_scale on a TV"> |
+| `font_scale` | <img src="../themes/dashboard/screenshot.jpg" width="320" alt="font_scale on a TV"> |
 | `seasonal_skin` | <img src="../themes/halloween/screenshot.jpg" width="320" alt="seasonal_skin on a TV"> |
 | `settings_key_panel` | <img src="quick-settings-panel.jpg" width="320" alt="settings_key_panel on a TV"> |
 | `home_idle_clock_minutes` | <img src="clock-screensaver.png" width="320" alt="home_idle_clock_minutes on a TV"> |

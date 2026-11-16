@@ -39,6 +39,7 @@ updated. Add-ons with custom shell installers still need Bash; this native Windo
 | Theme | What it does | Screenshot |
 |---|---|---|
 | `default/` | The built-in look written out as JSON, as a starting point for your own | <img src="default/screenshot.jpg" width="320" alt="default theme"> |
+| `dashboard/` | Console-style Home: one row of favourites near the top that keeps the selected app in the first slot, an All apps tile, per-app public-domain backgrounds that cross-fade, and weather, memory, stocks and calendar cards (needs the `addons/dashboard-data` add-on; see [README.md](../README.md)) | <img src="dashboard/screenshot.jpg" width="320" alt="dashboard theme"> |
 | `dock-glass/` | A single frosted-glass dock row at the bottom: six columns with even padding, the focused app's name above it, no grid rows below, icon-only top buttons, and the app-colour glow over a near-black sky. No wallpaper of its own: add a `wallpaper.jpg` to put a picture behind the glass | <img src="dock-glass/screenshot.jpg" width="320" alt="dock-glass theme"> |
 | `ambient-glass/` | A dark five-column grid with a frosted-glass dock, round icon-only buttons, and a rotating collection of high-resolution alpine and desert landscapes. The photos are under the Unsplash License: see `ambient-glass/CREDITS.md` | <img src="ambient-glass/screenshot.jpg" width="320" alt="ambient-glass theme"> |
 | `aurora/` | A dark aurora wallpaper (teal and violet on navy, darker at the bottom) with a matching background colour | <img src="aurora/screenshot.jpg" width="320" alt="aurora theme"> |
@@ -157,6 +158,17 @@ A new key needs one there in the same pull request.
 | `wallpaper_order` | `shuffle` or `sequential` | How a collection advances. `shuffle` (the default, and what launchers did before this key existed) avoids repeating the current picture; `sequential` walks the folder in filename order and wraps at the end. An unknown value falls back to `shuffle` |
 | `wallpaper_dim` | 0 to 90 | Black overlay over wallpaper images, in percent; 0 by default and no shade view at all |
 | `dock_opacity` | 30 to 100 | Opacity of the dock's band, in percent, so a wallpaper shows through it; 100 by default (the cinematic shelf keeps its own translucent band). Launcher settings on the TV offers 100, 70, 50 or 30, which wins until the next theme push or Follow theme |
+| `console_layout` | 0 to 1 | 1: the Dashboard's console-style Home, one row of banners near the top with the selected app in the first slot, the buttons in a glass pill and the widget cards (see the [README](../README.md)); 0 by default |
+| `console_row_top` | 0 to 400 | With `console_layout`, the space above the row of banners in dp; 130 by default |
+| `console_button_scale` | 40 to 100 | With `console_layout`, the size of the buttons in the glass pill, in percent; 75 by default |
+| `favourites_only` | 0 to 1 | 1: Home holds only `dock_apps` and the apps the owner adds from All apps; 0 by default |
+| `app_open_zoom` | 0 to 1 | 1: an app grows out of the tile it was opened from; 0 by default |
+| `hero_compact` | 0 to 1 | 1: "Last opened" and the dots sit closer under the big app name; 0 by default |
+| `title_scale` | 40 to 150 | The big app name, in percent; 100 by default |
+| `font_scale` | 50 to 150 | The clock and date, in percent; 100 by default |
+| `weather_line` | string | The package of a data add-on for the weather and stocks cards, such as `io.github.rahul051296.dashboarddata`; empty by default |
+| `weather_place` | string | A place name for the weather card instead of the add-on's; empty by default |
+| `dock_wallpapers` | object | `{"package": "file in wallpapers/"}`: the picture that cross-fades in while that dock app is focused, with `_grid` for All apps |
 | `wallpaper_captions` | bool | With a rotating collection, the shown picture's name under the top-right buttons, from `wallpapers/captions.txt` (`001.jpg<TAB>Dusk over the peaks`, one per line); a picture without a line shows no name (`false` by default) |
 | `wallpaper_moods` | object | A rotating collection grouped by time of day: `{"morning": [...], "evening": [...], "night": [...]}` with file names from `wallpapers/`. Morning runs from sunrise to noon, evening until half an hour after sunset, night the rest, with the sun at config.xml's `latitude` and `longitude` (07:00 and 18:30 without them); a missing group rotates through every picture, and so does a group whose names are not the pictures in `wallpapers/` (a renamed picture, a suffix the launcher does not read), since those names are dropped one by one; every group is read by these three names only. Unset by default |
 | `tile_menu` | bool | Hold OK or press the remote's Menu key on a tile to open a small menu: Move, Remove from Home (with `app_library`) and App info. `true` by default since launcher 3.3; `false` keeps holding OK as a shortcut to the app's App info page and leaves Menu unchanged |

@@ -199,6 +199,58 @@ final class Config {
     final boolean inputsCecStateOnly;
     /** "12", "24" or "system" (theme clock_format, or Launcher settings' Clock row); see ClockFormat. */
     final String clockFormat;
+
+    /**
+     * The Dashboard keys, read from the pushed config.json like every other theme key. All of them are off, or
+     * at the launcher's usual size, unless a theme sets them.
+     */
+    static final class Console {
+        static final Console NONE = new Console(null);
+        /** console_layout 1: one row of banners near the top, the glass button pill and the widget cards. */
+        final boolean layout;
+        /** favourites_only 1: Home holds the dock apps and what the owner adds from All apps, nothing else. */
+        final boolean favouritesOnly;
+        /** app_open_zoom 1: the app grows out of the tile it was opened from. */
+        final boolean appOpenZoom;
+        /** hero_compact 1: the big app name and its line sit closer together. */
+        final boolean heroCompact;
+        /** console_row_top: dp from the top of the screen to the row of banners. */
+        final int rowTop;
+        /** console_button_scale, font_scale, title_scale: percent of the usual size. */
+        final int buttonScale, fontScale, titleScale;
+        /** weather_line: the data add-on's package; weather_place: a name to show instead of the add-on's. */
+        final String weatherLine, weatherPlace;
+        /** dock_wallpapers: {"package": "file in wallpapers/"}, with "_grid" for All apps. */
+        final Map<String, String> dockWallpapers;
+
+        Console(JSONObject json) {
+            if (json == null) json = new JSONObject();
+            layout = integer(json, "console_layout", 0, 0, 1) == 1;
+            favouritesOnly = integer(json, "favourites_only", 0, 0, 1) == 1;
+            appOpenZoom = integer(json, "app_open_zoom", 0, 0, 1) == 1;
+            heroCompact = integer(json, "hero_compact", 0, 0, 1) == 1;
+            rowTop = integer(json, "console_row_top", 130, 0, 400);
+            buttonScale = integer(json, "console_button_scale", 75, 40, 100);
+            fontScale = integer(json, "font_scale", 100, 50, 150);
+            titleScale = integer(json, "title_scale", 100, 40, 150);
+            weatherLine = string(json, "weather_line", "");
+            weatherPlace = string(json, "weather_place", "");
+            Map<String, String> map = new HashMap<>();
+            JSONObject dock = json.optJSONObject("dock_wallpapers");
+            if (dock != null) {
+                java.util.Iterator<String> keys = dock.keys();
+                while (keys.hasNext()) {
+                    String pkg = keys.next();
+                    String file = dock.optString(pkg, "").trim();
+                    if (!pkg.isEmpty() && ThemeFiles.collectionImage(file)) map.put(pkg, file);
+                }
+            }
+            dockWallpapers = Collections.unmodifiableMap(map);
+        }
+    }
+
+    /** The Dashboard keys; NONE when no theme is pushed. */
+    Console console = Console.NONE;
     /** The Settings button opens the quick settings panel instead of the TV's Settings (settings_key_panel). */
     final boolean settingsKeyPanel;
     /** Home puts the remote's accessibility helpers back after a force stop (restore_key_services; ServiceRepair). */
@@ -643,7 +695,7 @@ final class Config {
             powerOnHomeAlways = bool(json, "power_on_home_always", powerOnHomeAlways);
             inputsConnectedOnly = bool(json, "inputs_connected_only", inputsConnectedOnly);
             inputsCecStateOnly = bool(json, "inputs_cec_state_only", inputsCecStateOnly);
-            clockFormat = string(json, CLOCK_FORMAT_KEY, clockFormat);
+            clockFormat = string(json, "clock_format", clockFormat);
             dockGlass = bool(json, "dock_glass", dockGlass);
             dockEvenPadding = bool(json, "dock_even_padding", dockEvenPadding);
             dockBand = bool(json, "dock_band", dockBand);
@@ -717,7 +769,7 @@ final class Config {
         Festival festival = json == null ? Festival.NONE : Festival.parse(festivalName(json),
                 string(json, "festival_until", ""), string(json, "greeting", ""), string(json, "accent_color", ""));
 
-        return new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
+        Config config = new Config(dock, fillDock, hidden, libraryApps, libraryExcludedApps, liveTv, liveTvAction, liveTvInputId, packageMap(launchActions), packageMap(appLabels),
                 packageMap(appBanners), panelService, panelAction, panelExtra, coocaaSources, inputAction, inputSources, inputUriScheme, Math.max(1, columns),
                 Math.max(0, rowsBelow), animations, advancedEffects, shamsi, greetingName, moduleCards, reducedMotion, bootToLiveTv,
                 openOnStartChoice, dockTitle, dockRow, topMenu, launcherSettingsButton, reorderButton, showNetworkPill, showInputsPill,
@@ -733,6 +785,8 @@ final class Config {
                 dateBelowClock, vpnPill, locale, powerOnHomeAlways, inputsConnectedOnly, inputsCecStateOnly,
                 Math.max(0, Math.min(600, openOnStartNetworkWait)), openOnStartOnWake, iconOnlyVpn, clockFormat, backOpensClock, glowSnap,
                 settingsKeyClearTask);
+        config.console = new Console(json);
+        return config;
     }
 
     /**
