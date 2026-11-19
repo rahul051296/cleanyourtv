@@ -1,6 +1,6 @@
-# CleanYourTV Dashboard
+# Plexed
 
-Two Home screens for Android TV and Google TV:
+A Plex Home for your Android TV or Google TV, plus the Dashboard theme, built on CleanYourTV. Two Home screens:
 
 - **Plexed**: your Plex Home on the TV. A full-screen carousel of what you're watching and what was recently
   added to or released on your Plex server, with "Who's watching?" profiles, one row of apps and the weather beside the clock.
@@ -163,8 +163,8 @@ The two themes are switched on by these keys in a theme's `config.json`, on top 
 
 ## Tested on
 
-- Sony BRAVIA 4K AE2, Google TV 14
-- Sony BRAVIA 4K VH21 (X85K), Android TV 12
+- Sony BRAVIA 4K AE2, Google TV 14: Plexed and Dashboard
+- Sony BRAVIA 4K VH21 (X85K), Android TV 12: Dashboard, on an earlier build
 
 ## Credits
 
