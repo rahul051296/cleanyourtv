@@ -1,5 +1,6 @@
 package io.github.rahul051296.dashboarddata;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
@@ -7,6 +8,8 @@ import android.widget.Toast;
 
 /** Saves the place and unit from the intent's extras (lat, lon, unit c/f), then fetches once. No UI of its own. */
 public final class SetupActivity extends Activity {
+    // commit(), not apply(): started over ADB and finished at once, the settings must be on disk before it exits.
+    @SuppressLint("ApplySharedPref")
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);

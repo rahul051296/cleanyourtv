@@ -157,7 +157,7 @@ public final class WeatherProvider extends ContentProvider {
                         .putString("detail", detail.toString())
                         .putString("fetched_for", lat + "," + lon)
                         .putLong("updated", System.currentTimeMillis())
-                        .commit();
+                        .apply();
                 ctx.getContentResolver().notifyChange(URI, null);
             } catch (Exception e) {
                 // Offline or a bad answer: keep the last reading; the next query after RETRY_MS tries again.
@@ -220,7 +220,7 @@ public final class WeatherProvider extends ContentProvider {
                 .putString("detail", detail.toString())
                 .putString("fetched_for", lat + "," + lon)
                 .putLong("updated", System.currentTimeMillis())
-                .commit();
+                .apply();
         ctx.getContentResolver().notifyChange(URI, null);
     }
 
@@ -269,7 +269,7 @@ public final class WeatherProvider extends ContentProvider {
                 }
                 if (out.length() > 0) {
                     p.edit().putString("stocks_json", out.toString()).putLong("stocks_updated", System.currentTimeMillis())
-                            .commit();
+                            .apply();
                     ctx.getContentResolver().notifyChange(STOCKS_URI, null);
                 }
             } finally {

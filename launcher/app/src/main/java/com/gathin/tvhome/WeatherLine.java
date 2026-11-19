@@ -39,6 +39,9 @@ final class WeatherLine {
     private final Runnable poll = this::pollTick;
     private boolean watching;
 
+    /** The condition in words too (Plexed, where the line sits under the date). */
+    boolean words;
+
     private WeatherLine(Context ctx, Uri uri, Handler main, Listener listener) {
         this.ctx = ctx;
         this.uri = uri;
@@ -52,16 +55,24 @@ final class WeatherLine {
         };
     }
 
+    /** The meta-data an add-on names its Recently watched provider in (recent_hero, recent_shelf). */
+    static final String META_RECENT = "com.gathin.tvhome.recent";
+
+    /** The weather provider the add-on {@code pkg} names; see the three-argument form. */
+    static String authority(Context ctx, String pkg) {
+        return authority(ctx, pkg, META);
+    }
+
     /**
-     * The provider authority the add-on {@code pkg} names in its {@value #META} meta-data, if that provider is the
+     * The provider authority the add-on {@code pkg} names in its {@code meta} meta-data, if that provider is the
      * package's own; null when the package is empty, missing or names none. Naming the package is the owner's opt-in.
      */
-    static String authority(Context ctx, String pkg) {
+    static String authority(Context ctx, String pkg, String meta) {
         if (pkg == null || pkg.trim().isEmpty()) return null;
         try {
             PackageManager pm = ctx.getPackageManager();
             ApplicationInfo info = pm.getApplicationInfo(pkg.trim(), PackageManager.GET_META_DATA);
-            String authority = info.metaData == null ? null : info.metaData.getString(META);
+            String authority = info.metaData == null ? null : info.metaData.getString(meta);
             if (authority == null || authority.trim().isEmpty()) return null;
             ProviderInfo provider = pm.resolveContentProvider(authority.trim(), 0);
             return provider != null && pkg.trim().equals(provider.packageName) ? authority.trim() : null;
@@ -72,20 +83,10 @@ final class WeatherLine {
 
     /** Null when the package is empty, not installed, or names no provider of its own in a {@value #META} meta-data. */
     static WeatherLine create(Context ctx, String pkg, Handler main, Listener listener) {
-        if (pkg == null || pkg.trim().isEmpty()) return null;
-        try {
-            PackageManager pm = ctx.getPackageManager();
-            ApplicationInfo info = pm.getApplicationInfo(pkg.trim(), PackageManager.GET_META_DATA);
-            String authority = info.metaData == null ? null : info.metaData.getString(META);
-            if (authority == null || authority.trim().isEmpty()) return null;
-            ProviderInfo provider = pm.resolveContentProvider(authority.trim(), 0);
-            if (provider == null || !pkg.trim().equals(provider.packageName)) return null;
-            Uri uri = new Uri.Builder().scheme(ContentResolver.SCHEME_CONTENT).authority(authority.trim())
-                    .appendPath("now").build();
-            return new WeatherLine(ctx, uri, main, listener);
-        } catch (PackageManager.NameNotFoundException e) {
-            return null;
-        }
+        String authority = authority(ctx, pkg);
+        if (authority == null) return null;
+        Uri uri = new Uri.Builder().scheme(ContentResolver.SCHEME_CONTENT).authority(authority).appendPath("now").build();
+        return new WeatherLine(ctx, uri, main, listener);
     }
 
     void start() {
@@ -126,7 +127,9 @@ final class WeatherLine {
                     if (c != null && c.moveToFirst()) {
                         long updated = c.getLong(5);
                         if (System.currentTimeMillis() - updated < STALE_MS) {
-                            line = format(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getInt(4) != 0);
+                            line = words
+                                    ? formatWords(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getInt(4) != 0)
+                                    : format(c.getInt(0), c.getInt(1), c.getInt(2), c.getInt(3), c.getInt(4) != 0);
                         }
                     }
                 } catch (RuntimeException gone) {
@@ -143,6 +146,13 @@ final class WeatherLine {
     /** "☁ 8°  H 11° L 4°". The symbols carry U+FE0E so they draw as text, not as colour emoji. */
     static String format(int temp, int high, int low, int code, boolean day) {
         return symbol(code, day) + "︎  " + temp + "°    H " + high + "°  L " + low + "°";
+    }
+
+    /** "⛅ 6°  PARTLY CLOUDY · H 10°  L 3°". */
+    static String formatWords(int temp, int high, int low, int code, boolean day) {
+        return symbol(code, day) + "\uFE0E  " + temp + "°   "
+                + HomeWidgets.describe(code).toUpperCase(java.util.Locale.getDefault())
+                + "  ·  H " + high + "°  L " + low + "°";
     }
 
     /** A WMO weather code as one symbol. */

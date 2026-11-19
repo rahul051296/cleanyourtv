@@ -214,8 +214,26 @@ final class Config {
         final boolean appOpenZoom;
         /** hero_compact 1: the big app name and its line sit closer together. */
         final boolean heroCompact;
-        /** focus_lift 1: the focused tile rises on a soft shadow, leans the way focus moved and catches a shine. */
-        final boolean focusLift;
+        /**
+         * focus_lift 1: the focused tile rises on a soft shadow, leans the way focus moved and catches a shine.
+         * 2: the same, a size larger and on a deeper shadow.
+         */
+        final boolean focusLift, focusLiftStrong;
+        /** focus_dim (percent, 0 off, at most 60): while a tile has focus, the others are this much darker. */
+        final int focusDim;
+        /** recent_shelf: the data add-on's package; a Recently watched row under the dock band (RecentShelf). */
+        final String recentShelf;
+        /**
+         * recent_hero: the data add-on's package. Home's hero is a carousel of Continue watching and Newly added:
+         * the item's art wide at the top inside a gradient of its colours, its details, a description and Resume or
+         * Play under it, one row of apps below and All apps under the fold (RecentHero).
+         */
+        final String recentHero;
+        /**
+         * recent_art_corner 1: a focused Recently watched item's art sits in the top-right corner, fading into a
+         * gradient of its own colours, instead of filling the screen.
+         */
+        final boolean recentArtCorner;
         /** console_row_top: dp from the top of the screen to the row of banners. */
         final int rowTop;
         /** console_button_scale, font_scale, title_scale: percent of the usual size. */
@@ -224,6 +242,8 @@ final class Config {
         final String weatherLine, weatherPlace;
         /** dock_wallpapers: {"package": "file in wallpapers/"}, with "_grid" for All apps. */
         final Map<String, String> dockWallpapers;
+        /** app_colour_backdrop: behind Home, a gradient of the focused app's own colour instead of dock_wallpapers. */
+        final boolean appColourBackdrop;
 
         Console(JSONObject json) {
             if (json == null) json = new JSONObject();
@@ -231,7 +251,14 @@ final class Config {
             favouritesOnly = integer(json, "favourites_only", 0, 0, 1) == 1;
             appOpenZoom = integer(json, "app_open_zoom", 0, 0, 1) == 1;
             heroCompact = integer(json, "hero_compact", 0, 0, 1) == 1;
-            focusLift = integer(json, "focus_lift", 0, 0, 1) == 1;
+            int lift = integer(json, "focus_lift", 0, 0, 2);
+            focusLift = lift >= 1;
+            focusLiftStrong = lift == 2;
+            focusDim = integer(json, "focus_dim", 0, 0, 60);
+            recentShelf = string(json, "recent_shelf", "");
+            recentHero = string(json, "recent_hero", "");
+            recentArtCorner = integer(json, "recent_art_corner", 0, 0, 1) == 1;
+            appColourBackdrop = integer(json, "app_colour_backdrop", 0, 0, 1) == 1;
             rowTop = integer(json, "console_row_top", 130, 0, 400);
             buttonScale = integer(json, "console_button_scale", 75, 40, 100);
             fontScale = integer(json, "font_scale", 100, 50, 150);

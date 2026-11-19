@@ -153,4 +153,15 @@
     <string name="clock_format_12">12 שעות</string>
     <string name="clock_format_24">24 שעות</string>
     <string name="all_apps">כל האפליקציות</string>
+    <!-- Dashboard and Plexed -->
+    <string name="used_of_total_gb">%1$s / %2$s GB</string>
+    <string name="stocks_getting_prices">טוען מחירים…</string>
+    <string name="recent_shelf_title">נצפו לאחרונה</string>
+    <string name="hero_continue_watching">המשך צפייה</string>
+    <string name="hero_up_next">הבא בתור</string>
+    <string name="hero_recently_added">נוספו לאחרונה</string>
+    <string name="hero_recently_released">יצאו לאחרונה</string>
+    <string name="hero_resume">המשך</string>
+    <string name="hero_play">הפעלה</string>
+    <string name="hero_more">עוד</string>
 </resources>

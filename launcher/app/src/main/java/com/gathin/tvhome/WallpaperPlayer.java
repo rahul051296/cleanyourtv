@@ -48,6 +48,25 @@ final class WallpaperPlayer {
     private final int dimColor;
     /** The picture on screen, released once the next one has been drawn. */
     private Bitmap current;
+    /** Pictures handed in by showArt: owned by the caller, so never recycled here. */
+    private final java.util.Set<Bitmap> external = java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    /** recent_hero: the hero's art stays behind Home whatever app is focused, so focusApp is ignored. */
+    private boolean artOnly;
+    /**
+     * recent_hero themes: Home's first frame does not wait for a picture (the hero's loading state covers the screen
+     * until its own art arrives), so the first one decodes in the background like a rotation's, and the dock's
+     * pictures decode when an app is first focused instead of all up front (the hero's art hides them anyway).
+     */
+    private final boolean lazy;
+
+    void setArtOnly(boolean on) {
+        artOnly = on;
+    }
+
+    /** Where in Home's root a layer goes to sit right above the wallpaper (0 when there is no wallpaper view). */
+    int layerAbove() {
+        return root.indexOfChild(image) + 1;
+    }
     private boolean active;
     private boolean closed;
     private boolean loading;
@@ -92,11 +111,16 @@ final class WallpaperPlayer {
                 ? WallpaperCaptions.read(files.get(0).getParentFile()) : Collections.emptyMap();
         caption = names.isEmpty() ? null : makeCaption(context, root);
         dockMap = config.console.dockWallpapers;
-        if (config.wallpaperEnabled && !files.isEmpty()) {
+        lazy = !config.console.recentHero.isEmpty();
+        // app_colour_backdrop needs no pictures of its own: MainActivity hands in a gradient for each focus (showArt).
+        if (config.wallpaperEnabled && (!files.isEmpty() || config.console.appColourBackdrop)) {
             root.addView(image, 0, new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-            showFirst();
-            if (!dockMap.isEmpty()) preloadDockPictures();
+            // Lazy (recent_hero themes): start() brings the first picture in, off the main thread (update).
+            if (!lazy) {
+                showFirst();
+                if (!dockMap.isEmpty()) preloadDockPictures();
+            }
         }
     }
 
@@ -138,7 +162,7 @@ final class WallpaperPlayer {
 
     /** Called when a dock tile takes focus: cross-fades to that app's picture, if the theme maps one. */
     void focusApp(String pkg) {
-        if (dockMap.isEmpty() || closed || pkg == null) return;
+        if (dockMap.isEmpty() || closed || pkg == null || artOnly) return;
         String name = dockMap.get(pkg);
         if (name == null || name.equals(displayed)) return;
         File file = dockFile(name);
@@ -159,7 +183,22 @@ final class WallpaperPlayer {
         });
     }
 
+    /**
+     * recent_shelf: a focused episode's backdrop, cross-faded in like a dock app's picture but never remembered as
+     * the wallpaper; the next focusApp() cross-fades back to the theme's own picture.
+     */
+    void showArt(Bitmap bitmap, String key) {
+        if (closed || bitmap == null) return;
+        external.add(bitmap);   // the caller keeps these; the fade must not recycle them
+        dockWanted = key;
+        crossfadeTo(bitmap, key, false);
+    }
+
     private void crossfadeTo(Bitmap bitmap, String name) {
+        crossfadeTo(bitmap, name, true);
+    }
+
+    private void crossfadeTo(Bitmap bitmap, String name, boolean remember) {
         Bitmap old = current;
         current = bitmap;
         displayed = name;
@@ -178,9 +217,9 @@ final class WallpaperPlayer {
                 if (current == bitmap && image.getDrawable() == fade) image.setImageBitmap(bitmap);
             }, CROSSFADE_MS + 50);
         }
-        showCaption(true);
-        preferences.edit().putString("image", name).putLong("changed", System.currentTimeMillis()).apply();
-        if (old != null && old != bitmap && !dockCache.containsValue(old)) {
+        showCaption(remember);
+        if (remember) preferences.edit().putString("image", name).putLong("changed", System.currentTimeMillis()).apply();
+        if (old != null && old != bitmap && !dockCache.containsValue(old) && !external.contains(old)) {
             image.postDelayed(old::recycle, CROSSFADE_MS + 500);
         }
     }
@@ -273,7 +312,8 @@ final class WallpaperPlayer {
             Bitmap bitmap = decode(next);
             root.post(() -> {
                 loading = false;
-                if (closed || !active) {
+                // Home hidden meanwhile, or the hero's art went up first: that art stays.
+                if (closed || !active || artOnly) {
                     if (bitmap != null) bitmap.recycle();
                     return;
                 }

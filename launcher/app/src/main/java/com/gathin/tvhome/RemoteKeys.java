@@ -479,6 +479,7 @@ final class RemoteKeys {
         Intent open = ctx.getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
         if (open == null) open = ctx.getPackageManager().getLaunchIntentForPackage(pkg);
         if (open == null) return;
+        LastOpened.record(ctx, pkg);   // a remote button counts as "last opened" too (Recently watched)
         try {
             ctx.startActivity(open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch (ActivityNotFoundException | SecurityException ignored) {

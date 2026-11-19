@@ -1,0 +1,6 @@
+<resources>
+    <string name="app_name">Plexed data</string>
+    <!-- The Plex link page -->
+    <string name="link_unreachable">Couldn\'t reach plex.tv. Check the network and try again.</string>
+    <string name="link_done">Linked. Your Plex profiles are ready.</string>
+</resources>

@@ -35,6 +35,7 @@
   "hero_compact": 1,
   "weather_line": "io.github.rahul051296.dashboarddata",
   "console_layout": 1,
+  "settings_key_panel": true,
   "uniform_tiles": false,
   "dock_band": false,
   "glass_style": "rim",
@@ -47,16 +48,6 @@
   "console_button_scale": 75,
   "app_library": true,
   "library_ok_opens": true,
-  "wallpaper_rotation_minutes": 5,
-  "wallpaper_order": "sequential",
-  "dock_wallpapers": {
-    "com.google.android.youtube.tv": "red.jpg",
-    "com.netflix.ninja": "sunset.jpg",
-    "com.amazon.amazonvideo.livingroom": "blue.jpg",
-    "com.disney.disneyplus": "aurora.jpg",
-    "com.plexapp.android": "amber.jpg",
-    "com.apple.atve.androidtv.appletv": "pink.jpg",
-    "_grid": "allapps.jpg"
-  },
+  "app_colour_backdrop": 1,
   "favourites_only": 1
 }

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Theme picker (and the profile picker, which uses the same layout): the Inputs dropdown's glass panel, under the
+     top bar, with the list in a scrolling column. Lint would fold two of these views away, but each does a job:
+     the root is the scrim a click outside the panel closes the picker on (MergeRootFrame), and the panel, at least
+     240dp wide, gives the scrolling list a width its rows can fill (UselessParent: without it they stop short). -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/scrim"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:ignore="MergeRootFrame,UselessParent">
+
+    <LinearLayout
+        android:id="@+id/panel"
+        android:layout_width="wrap_content"
+        android:minWidth="240dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_marginTop="105dp"
+        android:layout_marginEnd="56dp"
+        android:orientation="vertical"
+        android:background="@drawable/glass_panel"
+        android:padding="6dp"
+        android:elevation="12dp">
+
+        <ScrollView
+            android:id="@+id/scroll"
+            android:layout_width="match_parent"
+            android:layout_height="380dp"
+            android:scrollbars="none"
+            android:fadingEdgeLength="24dp"
+            android:requiresFadingEdge="vertical">
+
+            <LinearLayout
+                android:id="@+id/rows"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>

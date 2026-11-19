@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No Home tile and no icon on purpose (MissingLeanbackLauncher, MissingApplicationIcon): the add-on serves data to
+     the launcher, and its one screen is the Plex link code the launcher opens. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="MissingLeanbackLauncher,MissingApplicationIcon">
+    <!-- plex.tv (linking, profiles, the list of servers), the Plex server itself, and the weather services. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Other apps' continue-watching rows (the TV's Watch Next list). Optional: granted with adb shell pm grant. -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- usesCleartextTraffic: a Plex server on the home network answers on plain http; plex.tv is always https.
+         Nothing is backed up (allowBackup false), so no extraction rules are needed (DataExtractionRules). -->
+    <application android:allowBackup="false" android:label="@string/app_name" android:usesCleartextTraffic="true"
+        tools:ignore="DataExtractionRules">
+        <!-- Clean Your TV reads Recently watched (theme keys recent_hero, recent_shelf) and the weather line
+             (weather_line) from these two providers. -->
+        <meta-data android:name="com.gathin.tvhome.recent" android:value="io.github.rahul051296.plexeddata.recent" />
+        <meta-data android:name="com.gathin.tvhome.weather" android:value="io.github.rahul051296.plexeddata.weather" />
+
+        <!-- Exported: the launcher reads it, and it has no permission of its own to ask for (the launcher stays
+             permission-free). It serves titles, artwork and profile first names, never a key. -->
+        <provider
+            android:name=".PlexedProvider"
+            android:authorities="io.github.rahul051296.plexeddata.recent"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
+        <!-- The weather now and today's high and low; exported for the same reason. -->
+        <provider
+            android:name=".WeatherProvider"
+            android:authorities="io.github.rahul051296.plexeddata.weather"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
+
+        <!-- Links the owner's Plex account once (plex.tv/link); the launcher opens it from Who's watching. -->
+        <activity
+            android:name=".LinkActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar"
+            android:excludeFromRecents="true" />
+        <activity
+            android:name=".SetupActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+    </application>
+</manifest>

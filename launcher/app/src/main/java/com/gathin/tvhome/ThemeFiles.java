@@ -38,8 +38,18 @@ final class ThemeFiles {
                 && (collectionImage(segments.get(1)) || WallpaperCaptions.FILE_NAME.equals(segments.get(1)))) {
             return WALLPAPERS + "/" + segments.get(1);
         }
+        // The theme picker's library: library/<theme>/config.json, wallpaper.jpg, font.ttf or wallpapers/<image>.
+        if (segments.size() >= 3 && ThemeLibrary.FOLDER.equals(segments.get(0))
+                && LIBRARY_NAME.matcher(segments.get(1)).matches()) {
+            String inner = path(segments.subList(2, segments.size()));
+            if (inner != null && !"theme_revision".equals(inner)) {
+                return ThemeLibrary.FOLDER + "/" + segments.get(1) + "/" + inner;
+            }
+        }
         return null;
     }
+
+    private static final Pattern LIBRARY_NAME = Pattern.compile("[a-z0-9][a-z0-9_-]{0,39}");
 
     /** True for "wallpapers" alone: a delete of it clears the collection's images. */
     static boolean isCollection(List<String> segments) {

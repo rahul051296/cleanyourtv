@@ -602,6 +602,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             weatherView.setText(line == null ? "" : line);
             weatherView.setVisibility(line == null ? View.GONE : View.VISIBLE);
         });
+        if (weatherLine != null && !console.recentHero.isEmpty() && !cfg.dateBelowClock) {
+            weatherLine.words = true;
+            weatherBesideClock(weatherView);
+        }
         // The rotation runs on the clock that never jumps: setting the TV's time must not stall or stretch a turn.
         rotationStart = SystemClock.elapsedRealtime();
         showStats = cfg.showStats;
@@ -633,6 +637,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         libraryExcludedApps = new HashSet<>(cfg.libraryExcludedApps);
 
         grid = findViewById(R.id.grid);
+        // focus_lift 2's shadow is wider than the margin the grid's wrapper clips at, so it stopped in a straight line
+        // at either end of a row. The wrapper stops clipping and the grid clips only above its own top (unclipGrid).
+        liftShadowsOverflow = console.focusLiftStrong && cfg.animations;
+        if (liftShadowsOverflow) {
+            ((ViewGroup) grid.getParent()).setClipChildren(false);
+            grid.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+                if (heroClip < 0 && shelfClipTop < 0) unclipGrid();
+            });
+        }
         rtlAppGrid = getResources().getBoolean(R.bool.rtl_app_grid);
         // Mirror only the app grid; the header and other locales keep their own layouts.
         // single_row: one span laid out sideways, so the same adapter, glass and dock band serve a scrolling row.
@@ -705,8 +718,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             public void onChildViewDetachedFromWindow(@NonNull View v) {
             }
         });
-        if (dockRow) grid.addItemDecoration(new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand,
+        if (dockRow) grid.addItemDecoration(dockDecoration = new DockDecoration(COLUMNS, density, cinematic, cfg.alwaysShowNames, cfg.dockOpacity, cfg.dockGlass, cfg.dockEvenPadding, cfg.dockBand,
                 singleRow, cfg.dockBandAll));
+        setUpRecentShelf();
+        setUpRecentHero();
         if (cfg.fadeRows) TopFade.attach(grid, 48 * density);
         // Reduced motion: the tiles are simply there, with no entrance (reloadApps skips it there too).
         if (animations && !reducedMotion) {
@@ -745,6 +760,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             if (singleRow && !cfg.alwaysShowNames) want += (int) (29 * density);
             if (consoleLayout) {
                 want = (int) (console.rowTop * density);
+            }
+            // recent_hero: the dock row sits higher, so the top of the second row peeks in at the bottom edge.
+            if (!console.recentHero.isEmpty() && MainActivity.this.dockRow && !singleRow) {
+                want -= (int) (HERO_PEEK_DP * density);
             }
             if (grid.getPaddingTop() != want) {
                 grid.setPadding(grid.getPaddingLeft(), want, grid.getPaddingRight(), grid.getPaddingBottom());
@@ -856,7 +875,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         btnSettings.setOnClickListener(v -> {
             if (launcherSettingsButton) startActivityForResult(
                     new Intent(this, LauncherSettingsActivity.class), LAUNCHER_SETTINGS_REQUEST);
-            else open(systemIntent(Settings.ACTION_SETTINGS));
+            else open(settingsKeyPanel ? new Intent(this, QuickSettingsActivity.class)
+                    : systemIntent(Settings.ACTION_SETTINGS));
         });
         btnReorder = findViewById(R.id.btnReorder);
         btnReorder.setOnClickListener(v -> toggleReorder());
@@ -931,6 +951,11 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             int firstButton = btnInputs.getVisibility() == View.VISIBLE ? R.id.btnInputs : firstTopButton().getId();
             int leftButton = rtlMenuBar ? R.id.btnSettings : firstButton;
             int rightButton = rtlMenuBar ? firstButton : R.id.btnSettings;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT && v.getId() == leftButton && profileButton != null
+                    && !rtlMenuBar) {
+                profileButton.requestFocus();
+                return true;
+            }
             if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) return v.getId() == leftButton;
             return keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && v.getId() == rightButton;
         };
@@ -1160,6 +1185,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (gameDay != null) gameDay.start();
         if (weatherLine != null) weatherLine.start();
         if (homeWidgets != null) homeWidgets.start();
+        if (recentShelf != null) recentShelf.start();
+        if (recentHero != null) recentHero.start();
         sky.update();
         wallpaperPlayer.start();
         handler.postDelayed(minuteTick, MINUTE_MS);
@@ -1347,6 +1374,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (gameDay != null) gameDay.stop();
         if (weatherLine != null) weatherLine.stop();
         if (homeWidgets != null) homeWidgets.stop();
+        if (recentShelf != null) recentShelf.stop();
+        if (recentHero != null) recentHero.stop();
         handler.removeCallbacks(turnTick);
         if (lamp != null) lamp.stop();
         cancelPendingFocusScroll();
@@ -1385,6 +1414,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         grid.getRecycledViewPool().clear();
         heroArtCache.clear();
         heroArtKey = null;
+        appGradients.clear();
         wallpaperPlayer.releaseForMemoryPressure();
         tileRefresh.invalidate();
     }
@@ -1417,6 +1447,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (gameDay != null) gameDay.shutdown();
         if (weatherLine != null) weatherLine.shutdown();
         if (homeWidgets != null) homeWidgets.shutdown();
+        if (recentShelf != null) recentShelf.shutdown();
+        if (recentHero != null) recentHero.shutdown();
         unregisterReceiver(packageReceiver);
         if (openOnStartOnWake) unregisterReceiver(wakeReceiver);
         wallpaperPlayer.close();
@@ -1465,30 +1497,32 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (homeIgnoreChannelKeys && RemoteKeys.isChannelKey(event.getKeyCode())) return true;
+        if (recentShelf != null && !reordering && event.getAction() == KeyEvent.ACTION_DOWN && shelfKey(event)) return true;
+        if (recentHero != null && !reordering && event.getAction() == KeyEvent.ACTION_DOWN && heroKey(event)) return true;
         if (homeWidgets != null && !reordering && event.getAction() == KeyEvent.ACTION_DOWN) {
             int code = event.getKeyCode();
             View f = getCurrentFocus();
-            boolean onOptimize = f == homeWidgets.optimize;
+            boolean onStorage = f == homeWidgets.storage;
             boolean onPrev = f == homeWidgets.prevMonth, onNext = f == homeWidgets.nextMonth;
-            boolean onCards = onOptimize || onPrev || onNext;
+            boolean onCards = onStorage || onPrev || onNext;
             boolean onTile = f != null && !onCards && isInGrid(f);
             if (code == KeyEvent.KEYCODE_DPAD_DOWN && onTile) {
-                homeWidgets.optimize.requestFocus();
+                homeWidgets.storage.requestFocus();
                 return true;
             }
             if (onCards && (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_BACK)) {
                 focusTile(Math.max(0, lastFocused));
                 return true;
             }
-            // Along the cards: Optimize, then the calendar's previous and next month arrows.
+            // Along the cards: Storage, then the calendar's previous and next month arrows.
             if (onCards && code == KeyEvent.KEYCODE_DPAD_RIGHT) {
-                if (onOptimize) homeWidgets.prevMonth.requestFocus();
+                if (onStorage) homeWidgets.prevMonth.requestFocus();
                 else if (onPrev) homeWidgets.nextMonth.requestFocus();
                 return true;
             }
             if (onCards && code == KeyEvent.KEYCODE_DPAD_LEFT) {
                 if (onNext) homeWidgets.prevMonth.requestFocus();
-                else if (onPrev) homeWidgets.optimize.requestFocus();
+                else if (onPrev) homeWidgets.storage.requestFocus();
                 return true;
             }
             if (onCards && code == KeyEvent.KEYCODE_DPAD_DOWN) return true;
@@ -1870,6 +1904,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
 
     @Override
     public void onTileFocused(int position, View card) {
+        if (recentShelf != null) {
+            shelfArtWanted = null;   // a tile took focus: no backdrop may land after it
+            recentShelf.setFocusEnabled(false);   // and the row is out of Android's focus search again
+        }
+        if (recentShelf != null && position < COLUMNS && shelfClipTop >= 0) {
+            shelfClipTop = -1;   // back on the dock: Home draws all the way up again
+            shelfUnder = -1;
+            unclipGrid();
+        }
         lastFocused = position;
         lastFocusedKey = adapter.keyAt(position);
         // Focus restored before the first layout (cold start): the tile has no size yet, and the glass
@@ -1954,15 +1997,28 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
                 }
             }
             showHero(position, scroll ? r.top - dy : r.top);
-            wallpaperPlayer.focusApp(adapter.packageAt(position));
+            if (recentHero != null) {
+                heroReturn = position;
+                if (heroSlid) heroSlideBack();
+            }
+            // recent_hero: the hero's art stays behind Home whichever app is focused.
+            if (recentHero == null || !recentHero.hasItems()) showAppBackdrop(position);
         } else {
             // Below the dock (or in a plain grid) the glow follows the tile without the big name; letting it
             // fade out left the grid on plain black.
             showGlowOnly(position);
-            wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
+            boolean slid = false;
+            if (recentHero != null && recentHero.hasItems()) {
+                slid = heroSlideAway();
+                showAppColour(position);   // All apps: the focused app's own colour behind Home
+            } else if (console.appColourBackdrop) {
+                showAppColour(position);
+            } else {
+                wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
+            }
             // Scroll just enough so the whole glass (not only the tile) is visible.
             revealRect.set(0, -(int) pad * 2, item.getWidth(), item.getHeight() + (int) pad);
-            grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
+            if (!slid) grid.requestChildRectangleOnScreen(item, revealRect, reducedMotion);
         }
     }
 
@@ -1991,9 +2047,529 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private float headerScale = 1f, titleScale = 1f;
     /** Theme key console_layout 1: the app row at the top, the title and artwork under it, the clock top right. */
     private boolean consoleLayout;
+    /** recent_shelf: the Recently watched row, and the decoration that leaves room for it. */
+    private RecentShelf recentShelf;
+    /** recent_shelf: the Who's watching capsule, first in the top bar: the selected profile's avatar and first name. */
+    private LinearLayout profileButton;
+    private ImageView profileAvatar;
+    private TextView profileName;
+    /** recent_shelf's "ALL APPS" heading over the grid, under the Recently watched row. */
+    private TextView allAppsHeading;
+    private DockDecoration dockDecoration;
+    /**
+     * recent_hero: the focused Recently watched item as Home's hero (RecentHero), the dock row lower and All apps
+     * below the fold. heroSlid: focus is in All apps, so the hero is faded out and the dock row sits under the clock.
+     */
+    private RecentHero recentHero;
+    /** How much of the second row shows under the dock row at rest, as a rise of the dock row, in dp. */
+    private static final float HERO_PEEK_DP = -6f;
+    private boolean heroSlid;
+    /** The dock tile focus came down from, so Down from the hero goes back to it. */
+    private int heroReturn;
+    /** While heroSlid, nothing of the grid draws above this line (root px), under the clock. */
+    private int heroClip = -1;
+    /** focus_lift 2: the grid's wrapper does not clip, so the grid itself clips above its top (see onCreate). */
+    private boolean liftShadowsOverflow;
+    private final java.util.Map<Integer, android.graphics.Bitmap> appGradients = new java.util.HashMap<>();
+    /** The dock tile focus came down from, so Up from the row goes back to it. */
+    private int shelfReturn;
+    /** While focus is in the row or the grid: nothing of Home draws above this line (root px), under the clock. */
+    private int shelfClipTop = -1;
+    /** The item whose backdrop was asked for last; a slower decode for an earlier one is dropped. */
+    private String shelfArtWanted;
+    /** The clip line under the clock itself; in the grid the line rises to hide the band above the row. */
+    private int shelfUnder = -1;
     /** The theme's Dashboard keys, from Config. */
     private Config.Console console = Config.Console.NONE;
     private float consoleCardBottom;
+
+    // ---- recent_hero -------------------------------------------------------------------------------------------
+
+    private void setUpRecentHero() {
+        if (!dockRow || singleRow || dockDecoration == null || console.recentHero.isEmpty()) return;
+        String authority = WeatherLine.authority(this, console.recentHero, WeatherLine.META_RECENT);
+        if (authority == null) return;
+        recentHero = new RecentHero(this, handler, authority);
+        root.addView(recentHero.backdrop, wallpaperPlayer.layerAbove(), new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        root.addView(recentHero.view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        recentHero.onArt = (bitmap, key) -> wallpaperPlayer.showArt(bitmap, key);
+        recentHero.onActive = this::heroActive;
+        setUpProfileButton(authority);
+        grid.getViewTreeObserver().addOnPreDrawListener(() -> {
+            placeHero();
+            return true;
+        });
+    }
+
+    /** The hero has items (true) or not: with items, Home ignores per-app pictures; without, they come back. */
+    private void heroActive(boolean on) {
+        wallpaperPlayer.setArtOnly(on);
+        if (!on) {
+            heroSlid = false;
+            heroClip = -1;
+            unclipGrid();
+            showAppBackdrop(Math.max(0, Math.min(lastFocused, COLUMNS - 1)));
+        }
+    }
+
+    /** Sits the hero right above the dock row, lined up with its first tile, and the All apps heading under it. */
+    private void placeHero() {
+        if (recentHero == null) return;
+        RecyclerView.ViewHolder first = grid.findViewHolderForAdapterPosition(0);
+        if (first == null) return;
+        View card = first.itemView.findViewById(R.id.card);
+        if (card == null || card.getWidth() == 0) return;
+        Rect r = tileRect;
+        r.set(0, 0, card.getWidth(), card.getHeight());
+        root.offsetDescendantRectToMyCoords(card, r);
+        Rect item = new Rect(0, 0, first.itemView.getWidth(), first.itemView.getHeight());
+        root.offsetDescendantRectToMyCoords(first.itemView, item);
+        // How far the dock row is from where it rests: the hero is placed from the resting row, not the moving one,
+        // so it does not ride along while the grid scrolls back (it looked as if it came out of the dock).
+        int away = first.itemView.getTop() - Math.round(6 * density) - grid.getPaddingTop();
+        int bottom = Math.max(0, root.getHeight() - Math.round(r.top - away - 34 * density));
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) recentHero.view.getLayoutParams();
+        if (lp.bottomMargin != bottom || recentHero.view.getPaddingLeft() != r.left) {
+            lp.bottomMargin = bottom;
+            recentHero.view.setLayoutParams(lp);
+            recentHero.view.setPadding(r.left, 0, r.left, 0);
+        }
+    }
+
+    /**
+     * Left and Right on the hero move through the items, Down goes to the dock, Up to the top bar; from the dock,
+     * Up reaches the hero, and Down from the top bar does too.
+     */
+    /**
+     * recent_hero (Plexed): the weather line goes above the date, beside the clock, and the two are centred on the
+     * divider between them, so the space above the weather matches the space below the date.
+     */
+    private void weatherBesideClock(TextView w) {
+        TextView date = findViewById(R.id.date);
+        View divider = findViewById(R.id.clockDivider);
+        LinearLayout col = (LinearLayout) date.getParent();
+        ((ViewGroup) w.getParent()).removeView(w);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = Math.round(6 * density);
+        col.addView(w, col.indexOfChild(date), lp);
+        w.setPadding(0, 0, 0, 0);
+        w.setIncludeFontPadding(false);
+        date.setIncludeFontPadding(false);
+        w.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        w.setLetterSpacing(0.1f);
+        w.setTextColor(0xB3FFFFFF);
+        int plain = ((LinearLayout.LayoutParams) col.getLayoutParams()).bottomMargin;
+        col.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            LinearLayout.LayoutParams cp = (LinearLayout.LayoutParams) col.getLayoutParams();
+            LinearLayout.LayoutParams dp = (LinearLayout.LayoutParams) divider.getLayoutParams();
+            int want = w.getVisibility() != View.VISIBLE ? plain
+                    : Math.max(0, dp.bottomMargin + divider.getHeight() / 2 - (b - t) / 2);
+            if (cp.bottomMargin != want) {
+                cp.bottomMargin = want;
+                col.post(() -> col.setLayoutParams(cp));
+            }
+        });
+    }
+
+    private boolean heroKey(KeyEvent event) {
+        if (!recentHero.hasItems()) return false;
+        int code = event.getKeyCode();
+        View f = getCurrentFocus();
+        if (f == null) return false;
+        if (recentHero.owns(f)) return heroOwnKey(f == recentHero.about, code);
+        // Into the hero: Up from the dock row, Down from the top bar.
+        if (code == KeyEvent.KEYCODE_DPAD_UP && isInGrid(f) && lastFocused < COLUMNS && !heroSlid) {
+            heroReturn = lastFocused;
+            recentHero.resume.requestFocus();
+            return true;
+        }
+        ViewGroup bar = findViewById(R.id.topButtons);
+        if (code == KeyEvent.KEYCODE_DPAD_DOWN && bar != null && f.getParent() == bar) {
+            recentHero.resume.requestFocus();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Keys on the hero's own parts. Up climbs from Resume to the description (when it has more to show) and on to
+     * the profile capsule; Down comes back the same way to the dock; Left and Right step through the items from
+     * either part. Back closes an open description, and otherwise leaves the way Down does.
+     */
+    private boolean heroOwnKey(boolean onAbout, int code) {
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+                if (onAbout) recentHero.resume.requestFocus();
+                recentHero.step(code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1);
+                return true;
+            case KeyEvent.KEYCODE_DPAD_UP:
+                if (!onAbout && recentHero.canFocusAbout()) {
+                    recentHero.about.requestFocus();
+                } else {
+                    (profileButton != null ? profileButton : firstTopButton()).requestFocus();
+                }
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+                if (onAbout && recentHero.closeAbout()) return true;
+                return leaveHeroDown(onAbout);
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                return leaveHeroDown(onAbout);
+            default:
+                return false;
+        }
+    }
+
+    /** One step down: from the description to Resume, from Resume to the dock tile it was entered from. */
+    private boolean leaveHeroDown(boolean onAbout) {
+        if (onAbout) {
+            recentHero.resume.requestFocus();
+        } else {
+            focusTile(Math.max(0, Math.min(heroReturn, COLUMNS - 1)));
+        }
+        return true;
+    }
+
+    /**
+     * Focus went into All apps: the hero fades, and Home slides up so the dock row sits under the clock with the
+     * apps below it. Returns true when it started that slide (the caller then skips its own scroll).
+     */
+    private boolean heroSlideAway() {
+        if (heroSlid) return false;
+        heroSlid = true;
+        recentHero.fadeOut();
+        RecyclerView.ViewHolder first = grid.findViewHolderForAdapterPosition(0);
+        if (first == null) return false;
+        Rect item = new Rect(0, 0, first.itemView.getWidth(), first.itemView.getHeight());
+        root.offsetDescendantRectToMyCoords(first.itemView, item);
+        View clockRow = findViewById(R.id.topButtons);
+        int[] at = new int[2];
+        int under = Math.round(150 * density);
+        if (clockRow != null) {
+            clockRow.getLocationInWindow(at);
+            under = at[1] + clockRow.getHeight() + Math.round(16 * density);
+        }
+        heroClip = under - Math.round(4 * density);
+        clipGridAbove(heroClip);
+        int dy = item.top - Math.round(6 * density) - under;
+        if (dy <= 0) return false;
+        if (animations && !reducedMotion) grid.smoothScrollBy(0, dy, new android.view.animation.DecelerateInterpolator(2f), 360);
+        else grid.scrollBy(0, dy);
+        return true;
+    }
+
+    /**
+     * Hides whatever the grid draws above `line` (a y in Home's root), so tiles scrolling up never cover the hero or
+     * the shelf. Only the top is cut: sideways and below, the clip reaches the screen's edges, so a focused tile's
+     * lift shadow at either end of a row fades out instead of stopping in a straight line at the grid's edge.
+     */
+    private void clipGridAbove(int line) {
+        Rect g = new Rect(0, 0, grid.getWidth(), grid.getHeight());
+        root.offsetDescendantRectToMyCoords(grid, g);
+        grid.setClipBounds(new Rect(-g.left, Math.max(0, line - g.top), root.getWidth() - g.left,
+                root.getHeight() - g.top));
+    }
+
+    /**
+     * No hero or shelf above the grid: it draws up to its own top again. With focus_lift 2 that top is a clip of the
+     * grid's own (its wrapper no longer clips); otherwise the wrapper does it, as it always did.
+     */
+    private void unclipGrid() {
+        if (!liftShadowsOverflow) {
+            grid.setClipBounds(null);
+            return;
+        }
+        View wrapper = (View) grid.getParent();
+        Rect w = new Rect(0, 0, wrapper.getWidth(), wrapper.getHeight());
+        root.offsetDescendantRectToMyCoords(wrapper, w);
+        clipGridAbove(w.top);
+    }
+
+    /** Focus is back on the dock row: the hero and its art come back (the dock's own scroll puts the row down). */
+    private void heroSlideBack() {
+        heroSlid = false;
+        heroClip = -1;
+        unclipGrid();
+        recentHero.fadeIn();
+        recentHero.reapplyArt();
+    }
+
+    /** Behind Home for a focused dock app: its own colour (app_colour_backdrop) or the theme's picture for it. */
+    private void showAppBackdrop(int position) {
+        if (console.appColourBackdrop) showAppColour(position);
+        else wallpaperPlayer.focusApp(adapter.packageAt(position));
+    }
+
+    /** The focused app's own colour behind Home, worked out from its banner (AppAdapter.ambientColorAt). */
+    private void showAppColour(int position) {
+        showColour(adapter.ambientColorAt(position));
+    }
+
+    /** A gradient of this colour behind Home; the last few are kept, so moving between apps never redraws one. */
+    private void showColour(int colour) {
+        android.graphics.Bitmap b = appGradients.get(colour);
+        if (b == null) {
+            if (appGradients.size() > 6) appGradients.clear();
+            b = RecentHeroArt.colourGradient(colour);
+            appGradients.put(colour, b);
+        }
+        wallpaperPlayer.showArt(b, "app:" + Integer.toHexString(colour));
+    }
+
+    // ---- recent_shelf ------------------------------------------------------------------------------------------
+
+    private void setUpRecentShelf() {
+        if (!dockRow || singleRow || dockDecoration == null || console.recentShelf.isEmpty()) return;
+        String authority = WeatherLine.authority(this, console.recentShelf, WeatherLine.META_RECENT);
+        if (authority == null) return;
+        recentShelf = new RecentShelf(this, handler, authority);
+        recentShelf.artCorner = console.recentArtCorner;
+        root.addView(recentShelf.view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        recentShelf.view.setTranslationY(-10000f);
+        allAppsHeading = new TextView(this);
+        allAppsHeading.setText(getString(R.string.all_apps).toUpperCase(Locale.getDefault()));
+        allAppsHeading.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        allAppsHeading.setLetterSpacing(0.08f);
+        allAppsHeading.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        allAppsHeading.setTextColor(0xB3FFFFFF);
+        root.addView(allAppsHeading, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        allAppsHeading.setTranslationY(-10000f);
+        recentShelf.onChanged = this::sizeShelfGap;
+        setUpProfileButton(authority);
+        // A focused episode or movie puts its own art behind Home; one without keeps the dock app's picture.
+        recentShelf.onFocus = item -> {
+            shelfArtWanted = item.id;
+            recentShelf.loadBackdrop(item, bitmap -> {
+                if (!item.id.equals(shelfArtWanted) || recentShelf == null) return;
+                if (bitmap != null) wallpaperPlayer.showArt(bitmap, "art:" + item.id);
+                else showAppBackdrop(Math.max(0, Math.min(shelfReturn, COLUMNS - 1)));
+            });
+        };
+        recentShelf.view.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> {
+            if (b - t != ob - ot) sizeShelfGap();
+        });
+        grid.getViewTreeObserver().addOnPreDrawListener(() -> {
+            placeShelf();
+            return true;
+        });
+    }
+
+    /**
+     * Who's watching: a capsule before Inputs with the selected profile's avatar and first name, in the top bar's own
+     * pill look (pill_bg, pill_text): glass at rest, white with dark text when focused. OK opens the picker.
+     */
+    private void setUpProfileButton(String authority) {
+        LinearLayout bar = findViewById(R.id.topButtons);
+        if (bar == null) return;
+        profileButton = new LinearLayout(this);
+        profileButton.setOrientation(LinearLayout.HORIZONTAL);
+        profileButton.setGravity(Gravity.CENTER_VERTICAL);
+        profileButton.setBackgroundResource(R.drawable.pill_bg);
+        profileButton.setFocusable(true);
+        profileButton.setPadding(Math.round(5 * density), 0, Math.round(16 * density), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                Math.round(42 * density));
+        lp.gravity = Gravity.CENTER_VERTICAL;
+        // No margin of its own: the next button's start margin spaces them, as between the other buttons.
+        profileButton.setLayoutParams(lp);
+        profileButton.setContentDescription(getString(R.string.whos_watching));
+
+        profileAvatar = new ImageView(this);
+        int face = Math.round(32 * density);
+        profileAvatar.setLayoutParams(new LinearLayout.LayoutParams(face, face));
+        profileAvatar.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        profileAvatar.setDuplicateParentStateEnabled(true);
+        profileAvatar.setClipToOutline(true);
+        profileAvatar.setOutlineProvider(new android.view.ViewOutlineProvider() {
+            @Override
+            public void getOutline(View view, android.graphics.Outline outline) {
+                outline.setOval(0, 0, view.getWidth(), view.getHeight());
+            }
+        });
+        showProfileFace(null);
+        profileButton.addView(profileAvatar);
+
+        profileName = new TextView(this);
+        profileName.setDuplicateParentStateEnabled(true);   // dark text when the capsule is focused (pill_text)
+        profileName.setTextColor(((TextView) findViewById(R.id.btnInputs)).getTextColors());   // pill_text, as the other buttons use it
+        profileName.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        profileName.setTypeface(Typeface.create(getString(R.string.font_medium), Typeface.NORMAL));
+        profileName.setLetterSpacing(0.01f);
+        profileName.setMaxLines(1);
+        profileName.setText(R.string.whos_watching);
+        LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        np.setMarginStart(Math.round(9 * density));
+        profileButton.addView(profileName, np);
+
+        profileButton.setOnClickListener(v -> startActivity(new Intent(this, ProfilePickerActivity.class)
+                .putExtra(ProfilePickerActivity.EXTRA_AUTHORITY, authority)));
+        profileButton.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                focusTile(lastFocused % COLUMNS);
+                return true;
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                // The next button that is shown: Inputs, or the gear when a theme hides the others (Plexed).
+                View next = nextTopButton(profileButton);
+                if (next != null) next.requestFocus();
+                return true;
+            }
+            return keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_LEFT;
+        });
+        bar.addView(profileButton, 0);
+        java.util.function.BiConsumer<String, android.graphics.Bitmap> onProfile = (name, picture) -> {
+            showProfileFace(picture);
+            profileName.setText(name == null ? getString(R.string.whos_watching) : name);
+            profileButton.setContentDescription(name == null ? getString(R.string.whos_watching)
+                    : getString(R.string.whos_watching) + ": " + name);
+        };
+        if (recentShelf != null) recentShelf.onProfile = onProfile;
+        if (recentHero != null) recentHero.onProfile = onProfile;
+    }
+
+    /** The avatar, or the plain person icon (tinted like the pill's text) when there is none. */
+    private void showProfileFace(android.graphics.Bitmap picture) {
+        if (picture != null) {
+            profileAvatar.setPadding(0, 0, 0, 0);
+            profileAvatar.setImageTintList(null);
+            profileAvatar.setImageBitmap(picture);
+        } else {
+            int p = Math.round(6 * density);
+            profileAvatar.setPadding(p, p, p, p);
+            profileAvatar.setImageResource(R.drawable.ic_profile);
+            profileAvatar.setImageTintList(((TextView) findViewById(R.id.btnInputs)).getTextColors());
+        }
+    }
+
+    /** Opens or closes the room under the dock row to fit the row. */
+    private void sizeShelfGap() {
+        if (recentShelf == null) return;
+        // The row (when it has anything), some air, then the ALL APPS heading over the grid.
+        int heading = allAppsHeading.getHeight() > 0 ? allAppsHeading.getHeight() : Math.round(18 * density);
+        int shelf = recentShelf.hasItems() && recentShelf.view.getHeight() > 0
+                ? recentShelf.view.getHeight() + Math.round(22 * density) : 0;
+        int want = adapter != null && adapter.appCount() > COLUMNS ? shelf + heading + Math.round(10 * density) : shelf;
+        if (dockDecoration.setExtraBelow(want)) grid.invalidateItemDecorations();
+    }
+
+    /** Puts the row in the gap under the dock row, following it as the grid scrolls; off screen otherwise. */
+    private void placeShelf() {
+        if (recentShelf == null) return;
+        RecyclerView.ViewHolder first = grid.findViewHolderForAdapterPosition(0);
+        if (first == null) {
+            if (recentShelf.view.getTranslationY() != -10000f) recentShelf.view.setTranslationY(-10000f);
+            if (allAppsHeading.getTranslationY() != -10000f) allAppsHeading.setTranslationY(-10000f);
+            return;
+        }
+        View card = first.itemView.findViewById(R.id.card);
+        Rect r = tileRect;
+        r.set(0, 0, card.getWidth(), card.getHeight());
+        root.offsetDescendantRectToMyCoords(card, r);
+        int gap = 0;
+        RecyclerView.ViewHolder second = grid.findViewHolderForAdapterPosition(1);
+        if (second != null) {
+            View c2 = second.itemView.findViewById(R.id.card);
+            Rect r2 = new Rect(0, 0, c2.getWidth(), c2.getHeight());
+            root.offsetDescendantRectToMyCoords(c2, r2);
+            gap = Math.max(0, r2.left - r.right);
+        }
+        recentShelf.setGeometry(r.left, card.getWidth(), gap);
+        Rect item = new Rect(0, 0, first.itemView.getWidth(), first.itemView.getHeight());
+        root.offsetDescendantRectToMyCoords(first.itemView, item);
+        float y = item.bottom + 12 * density + 6 * density;
+        float shelfY = recentShelf.hasItems() && (shelfUnder < 0 || y >= shelfUnder) ? y : -10000f;
+        if (recentShelf.view.getTranslationY() != shelfY) recentShelf.view.setTranslationY(shelfY);
+        // In the grid (focus below the row), the band above the row is hidden too, so no sliver of it shows.
+        if (shelfUnder >= 0) {
+            View f = getCurrentFocus();
+            boolean inGrid = f != null && !recentShelf.contains(f) && lastFocused >= COLUMNS && isInGrid(f);
+            int line = inGrid && recentShelf.hasItems() ? Math.max(shelfUnder, Math.round(y - 10 * density)) : shelfUnder;
+            if (line != shelfClipTop) {
+                shelfClipTop = line;
+                clipGridAbove(line);
+            }
+        }
+        float headingY = adapter.appCount() > COLUMNS
+                ? (recentShelf.hasItems() ? y + recentShelf.view.getHeight() + 22 * density : y) : -10000f;
+        if (shelfUnder >= 0 && headingY < shelfUnder) headingY = -10000f;
+        allAppsHeading.setTranslationX(r.left);
+        if (allAppsHeading.getTranslationY() != headingY) allAppsHeading.setTranslationY(headingY);
+    }
+
+    /** Down from the dock goes into the row, Down again to the grid; Up walks back. */
+    private boolean shelfKey(KeyEvent event) {
+        int code = event.getKeyCode();
+        View f = getCurrentFocus();
+        if (f == null) return false;
+        boolean inShelf = recentShelf.contains(f);
+        if (inShelf) {
+            if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_BACK) {
+                focusTile(Math.max(0, Math.min(shelfReturn, COLUMNS - 1)));
+                return true;
+            }
+            if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                int i = Math.max(0, recentShelf.focusedIndex());
+                int target = COLUMNS + Math.min(i, COLUMNS - 1);
+                if (target < adapter.appCount()) focusTile(target);
+                return true;
+            }
+            int i = recentShelf.focusedIndex();
+            if (code == KeyEvent.KEYCODE_DPAD_LEFT && i == 0) return true;
+            if (code == KeyEvent.KEYCODE_DPAD_RIGHT && i == recentShelf.count() - 1) return true;
+            return false;
+        }
+        if (!recentShelf.hasItems() || !isInGrid(f)) return false;
+        if (code == KeyEvent.KEYCODE_DPAD_DOWN && lastFocused < COLUMNS) {
+            shelfReturn = lastFocused;
+            recentShelf.focusNear(f);
+            slideToShelf();
+            return true;
+        }
+        if (code == KeyEvent.KEYCODE_DPAD_UP && lastFocused >= COLUMNS && lastFocused < 2 * COLUMNS) {
+            shelfReturn = Math.max(0, Math.min(shelfReturn, COLUMNS - 1));
+            if (grid.findViewHolderForAdapterPosition(0) == null) grid.scrollToPosition(0);
+            View from = f;
+            grid.post(() -> {
+                recentShelf.focusNear(from);
+                slideToShelf();
+            });
+            return true;
+        }
+        return false;
+    }
+
+    /** Fades the big title and scrolls the grid so the row, the ALL APPS heading and a row of apps fit. */
+    private void slideToShelf() {
+        hero.animate().cancel();
+        if (animations && !reducedMotion) hero.animate().alpha(0f).setDuration(160).start();
+        else hero.setAlpha(0f);
+        heroShown = false;
+        RecyclerView.ViewHolder first = grid.findViewHolderForAdapterPosition(0);
+        if (first == null) return;
+        Rect item = new Rect(0, 0, first.itemView.getWidth(), first.itemView.getHeight());
+        root.offsetDescendantRectToMyCoords(first.itemView, item);
+        // The band goes up to just under the clock; the clock and the buttons stay where they are.
+        View clockRow = findViewById(R.id.topButtons);
+        int[] at = new int[2];
+        int under = Math.round(150 * density);
+        if (clockRow != null) {
+            clockRow.getLocationInWindow(at);
+            under = at[1] + clockRow.getHeight() + Math.round(16 * density);
+        }
+        shelfUnder = shelfClipTop = under - Math.round(4 * density);
+        clipGridAbove(shelfClipTop);
+        int dy = item.top - Math.round(6 * density) - under;   // negative when coming back up from the grid
+        if (dy == 0) return;
+        if (animations && !reducedMotion) grid.smoothScrollBy(0, dy, new android.view.animation.DecelerateInterpolator(2f), 360);
+        else grid.scrollBy(0, dy);
+    }
 
     private boolean isInGrid(View v) {
         for (android.view.ViewParent p = v.getParent(); p != null; p = p.getParent()) if (p == grid) return true;
@@ -2623,8 +3199,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         libraryFocusPending = false;
         hideGlass();
         hideHero();
-        // console_layout: the All apps tile shows the theme's grid picture (dock_wallpapers "_grid").
-        if (consoleLayout) wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
+        // console_layout: the All apps tile shows the theme's grid picture (dock_wallpapers "_grid"), or with
+        // app_colour_backdrop a neutral gradient, as it is no app of its own.
+        if (consoleLayout && console.appColourBackdrop) showColour(RecentHeroArt.PLAIN);
+        else if (consoleLayout) wallpaperPlayer.focusApp(WallpaperPlayer.GRID_KEY);
     }
 
     /**
@@ -2699,6 +3277,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     }
 
     /** The first top-bar button after Inputs that is shown, in bar order (top_bar_apps, the network pill, ...); Settings is always there. */
+    /** The next shown button after `from` in the top bar, in reading order; null when it is the last. */
+    private View nextTopButton(View from) {
+        ViewGroup bar = findViewById(R.id.topButtons);
+        boolean rtl = getResources().getBoolean(R.bool.rtl_menu_bar);
+        int n = bar.getChildCount(), at = bar.indexOfChild(from);
+        for (int i = rtl ? at - 1 : at + 1; i >= 0 && i < n; i += rtl ? -1 : 1) {
+            View button = bar.getChildAt(i);
+            if (button.getVisibility() == View.VISIBLE && button.isFocusable()) return button;
+        }
+        return null;
+    }
+
     private View firstTopButton() {
         ViewGroup bar = findViewById(R.id.topButtons);
         // The Hebrew layout (layout-iw) lists the bar mirrored, Settings first and Inputs last, so bar order

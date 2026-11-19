@@ -27,7 +27,6 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -42,7 +41,7 @@ import java.util.concurrent.RejectedExecutionException;
 
 /**
  * console_layout's four glass cards along the bottom: the weather (now, the next hours, sun times, air), memory (RAM and
- * storage rings with Optimize, which closes apps idling in the background), a stocks watchlist and the month.
+ * storage rings, and Storage, which opens the TV's storage settings), a stocks watchlist and the month.
  * Weather and stocks come from the Weather line add-on's provider; the launcher itself stays offline.
  */
 final class HomeWidgets {
@@ -59,8 +58,8 @@ final class HomeWidgets {
     private final float dp;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     final LinearLayout root;
-    final TextView optimize;
-    /** The calendar card's month arrows; MainActivity moves focus to them from Optimize. */
+    final TextView storage;
+    /** The calendar card's month arrows; MainActivity moves focus to them from Storage. */
     final ImageView prevMonth, nextMonth;
     /** Months away from this one that the calendar shows, from -MONTH_RANGE to MONTH_RANGE. */
     private int monthOffset;
@@ -101,7 +100,7 @@ final class HomeWidgets {
         weatherBody.setOrientation(LinearLayout.VERTICAL);
         weather.addView(weatherBody, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
-        // Memory: two rings, Optimize along the bottom
+        // Memory: two rings, Storage along the bottom
         LinearLayout memory = card();
         LinearLayout rings = new LinearLayout(ctx);
         rings.setGravity(Gravity.CENTER_VERTICAL);
@@ -110,27 +109,28 @@ final class HomeWidgets {
         ramText = gauge(rings, "RAM", ramRing);
         storageText = gauge(rings, "Storage", storageRing);
         memory.addView(rings, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        optimize = text("Optimize", 14, Color.WHITE);
-        optimize.setFocusable(true);
-        android.graphics.drawable.Drawable sparkles = ctx.getDrawable(R.drawable.ic_sparkles);
-        if (sparkles != null) {
-            sparkles.setBounds(0, 0, px(17), px(17));
-            optimize.setCompoundDrawablesRelative(sparkles, null, null, null);
-            optimize.setCompoundDrawablePadding(px(7));
-            optimize.setCompoundDrawableTintList(new android.content.res.ColorStateList(
+        storage = text("Storage", 14, Color.WHITE);
+        storage.setFocusable(true);
+        android.graphics.drawable.Drawable icon = ctx.getDrawable(R.drawable.ic_storage);
+        if (icon != null) {
+            icon.setBounds(0, 0, px(17), px(17));
+            storage.setCompoundDrawablesRelative(icon, null, null, null);
+            storage.setCompoundDrawablePadding(px(7));
+            storage.setCompoundDrawableTintList(new android.content.res.ColorStateList(
                     new int[][] {{android.R.attr.state_focused}, {}}, new int[] {0xFF2C2628, Color.WHITE}));
         }
-        optimize.setGravity(Gravity.CENTER);
-        optimize.setPadding(0, px(7), 0, px(7));
-        // Full-width pill: pad both sides so the sparkles and the word sit together in the middle.
-        optimize.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> centreOptimize());
-        optimize.setBackground(pill());
-        optimize.setOnFocusChangeListener((v, has) -> optimize.setTextColor(has ? 0xFF2C2628 : Color.WHITE));
-        optimize.setOnClickListener(v -> optimizeNow());
+        storage.setGravity(Gravity.CENTER);
+        storage.setPadding(0, px(7), 0, px(7));
+        // Full-width pill: pad both sides so the icon and the word sit together in the middle.
+        storage.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> centreStorage());
+        storage.setBackground(pill());
+        storage.setOnFocusChangeListener((v, has) -> storage.setTextColor(has ? 0xFF2C2628 : Color.WHITE));
+        // A launcher may not clear other apps' caches or data; the TV's storage settings can, app by app.
+        storage.setOnClickListener(v -> openStorageSettings());
         LinearLayout.LayoutParams op = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         op.topMargin = px(8);
-        memory.addView(optimize, op);
+        memory.addView(storage, op);
 
         // Stocks
         LinearLayout stocks = card();
@@ -368,7 +368,7 @@ final class HomeWidgets {
         stocksRows.removeAllViews();
         stocksUpdated.setText(json == null ? "" : updated(stocksAt));
         if (json == null) {
-            stocksFoot.setText("Getting prices…");
+            stocksFoot.setText(R.string.stocks_getting_prices);
             return;
         }
         boolean open = false;
@@ -413,86 +413,12 @@ final class HomeWidgets {
         ActivityManager.MemoryInfo mi = new ActivityManager.MemoryInfo();
         am.getMemoryInfo(mi);
         long ramUsed = mi.totalMem - mi.availMem;
-        ramText.setText(gb(ramUsed) + " / " + gb(mi.totalMem) + " GB");
+        ramText.setText(ctx.getString(R.string.used_of_total_gb, gb(ramUsed), gb(mi.totalMem)));
         ramRing.set(ramUsed / (float) mi.totalMem);
         StatFs fs = new StatFs(Environment.getDataDirectory().getPath());
         long total = fs.getTotalBytes(), used = total - fs.getAvailableBytes();
-        storageText.setText(gb(used) + " / " + gb(total) + " GB");
+        storageText.setText(ctx.getString(R.string.used_of_total_gb, gb(used), gb(total)));
         storageRing.set(used / (float) total);
-    }
-
-    /** Closes apps idling in the background (what Android lets a launcher close), then says how much it freed. */
-    private android.animation.ObjectAnimator optimizePulse;
-    private boolean optimizing;
-
-    /**
-     * Closes apps idling in the background (what Android lets a launcher close), then says how much it freed. Only
-     * apps with a TV or phone launch entry are asked, one at a time on a low-priority thread, so the request burst
-     * never stalls the screen; the button pulses softly meanwhile and keeps its width.
-     */
-    private void optimizeNow() {
-        if (optimizing) return;
-        optimizing = true;
-        ActivityManager am = (ActivityManager) ctx.getSystemService(Context.ACTIVITY_SERVICE);
-        ActivityManager.MemoryInfo before = new ActivityManager.MemoryInfo();
-        am.getMemoryInfo(before);
-        setOptimizeText("Optimizing…");
-        optimizePulse = android.animation.ObjectAnimator.ofFloat(optimize, View.ALPHA, 1f, 0.55f);
-        optimizePulse.setDuration(650);
-        optimizePulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
-        optimizePulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-        optimizePulse.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
-        optimizePulse.start();
-        Thread worker = new Thread(() -> {
-            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
-            android.content.pm.PackageManager pm = ctx.getPackageManager();
-            java.util.Set<String> targets = new java.util.LinkedHashSet<>();
-            for (String category : new String[] {android.content.Intent.CATEGORY_LEANBACK_LAUNCHER,
-                    android.content.Intent.CATEGORY_LAUNCHER}) {
-                android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(category);
-                for (android.content.pm.ResolveInfo r : pm.queryIntentActivities(i, 0)) targets.add(r.activityInfo.packageName);
-            }
-            targets.remove(ctx.getPackageName());
-            for (String pkg : targets) {
-                try {
-                    am.killBackgroundProcesses(pkg);
-                } catch (SecurityException ignored) {
-                    // Not allowed for this one: skip it.
-                }
-                try {
-                    Thread.sleep(25);
-                } catch (InterruptedException e) {
-                    break;
-                }
-            }
-            main.postDelayed(() -> {
-                ActivityManager.MemoryInfo after = new ActivityManager.MemoryInfo();
-                am.getMemoryInfo(after);
-                long freed = Math.max(0, after.availMem - before.availMem) / (1024 * 1024);
-                String free = gb(after.availMem) + " GB free";
-                if (optimizePulse != null) optimizePulse.cancel();
-                optimize.animate().alpha(1f).setDuration(200).start();
-                setOptimizeText("Optimize");
-                updateSystem();
-                optimizing = false;
-                // Android does not tell a launcher which other apps were running, only how much memory came back.
-                Toast.makeText(ctx, freed >= 20
-                                ? "Closed background apps · freed " + freed + " MB · " + free
-                                : "Nothing idle to close · " + free,
-                        Toast.LENGTH_LONG).show();
-            }, 600);
-        }, "optimize");
-        worker.start();
-    }
-
-    /** New label and its centring padding in the same frame, so the words never jump sideways. */
-    private void setOptimizeText(String label) {
-        optimize.setText(label);
-        int w = optimize.getWidth();
-        if (w <= 0) return;
-        int content = Math.round(optimize.getPaint().measureText(label)) + px(17) + optimize.getCompoundDrawablePadding();
-        int side = Math.max(0, (w - content) / 2);
-        optimize.setPadding(side, px(7), side, px(7));
     }
 
     // ---- calendar ------------------------------------------------------------------------------
@@ -777,13 +703,23 @@ final class HomeWidgets {
         return value;
     }
 
-    private void centreOptimize() {
-        int w = optimize.getWidth();
+    private void centreStorage() {
+        int w = storage.getWidth();
         if (w <= 0) return;
-        float textW = optimize.getPaint().measureText(optimize.getText().toString());
-        int content = Math.round(textW) + px(17) + optimize.getCompoundDrawablePadding();
+        float textW = storage.getPaint().measureText(storage.getText().toString());
+        int content = Math.round(textW) + px(17) + storage.getCompoundDrawablePadding();
         int side = Math.max(0, (w - content) / 2);
-        if (optimize.getPaddingLeft() != side) optimize.post(() -> optimize.setPadding(side, px(7), side, px(7)));
+        if (storage.getPaddingLeft() != side) storage.post(() -> storage.setPadding(side, px(7), side, px(7)));
+    }
+
+    /** The TV's storage settings (SystemSettings falls back to the TV's main settings where there are none). */
+    private void openStorageSettings() {
+        try {
+            ctx.startActivity(SystemSettings.intent(ctx, android.provider.Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK));
+        } catch (android.content.ActivityNotFoundException e) {
+            // No settings app answers at all: the button just does nothing.
+        }
     }
 
     private StateListDrawable pill() {

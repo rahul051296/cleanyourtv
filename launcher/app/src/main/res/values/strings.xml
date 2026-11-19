@@ -159,4 +159,22 @@
     <string name="clock_format_12">12-hour</string>
     <string name="clock_format_24">24-hour</string>
     <string name="all_apps">All apps</string>
+    <string name="themes" translatable="false">Themes</string>
+    <string name="link_plex" translatable="false">Link Plex account</string>
+    <string name="profile_pin" translatable="false">Profile PIN</string>
+    <string name="profile_pin_wrong" translatable="false">That PIN didn\'t work</string>
+    <string name="whos_watching" translatable="false">Who\'s watching</string>
+    <!-- Dashboard theme cards (console_layout) -->
+    <string name="stocks_getting_prices">Getting prices…</string>
+    <!-- used and total, each already a number of GB: "3.1 / 4.5 GB" -->
+    <string name="used_of_total_gb">%1$s / %2$s GB</string>
+    <!-- recent_shelf / recent_hero (Recently watched) -->
+    <string name="recent_shelf_title">RECENTLY WATCHED</string>
+    <string name="hero_continue_watching">CONTINUE WATCHING</string>
+    <string name="hero_up_next">UP NEXT</string>
+    <string name="hero_recently_added">RECENTLY ADDED</string>
+    <string name="hero_recently_released">RECENTLY RELEASED</string>
+    <string name="hero_resume">Resume</string>
+    <string name="hero_play">Play</string>
+    <string name="hero_more">More</string>
 </resources>

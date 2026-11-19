@@ -45,6 +45,13 @@ public final class QuickSettingsActivity extends Activity {
         addRow(rows, R.drawable.ic_wifi, R.string.quick_network, 0, SystemSettings.intent(this, Settings.ACTION_WIFI_SETTINGS));
         addRow(rows, R.drawable.ic_apps, R.string.quick_apps, R.string.quick_apps_hint,
                 SystemSettings.intent(this, Settings.ACTION_MANAGE_APPLICATIONS_SETTINGS));
+        // The on-TV theme library (themes pushed to library/<name>), with the theme in use beside it.
+        if (!ThemeLibrary.names(this).isEmpty()) {
+            String current = ThemeLibrary.current(this);
+            addRow(rows, R.drawable.ic_palette, getString(R.string.themes),
+                    current == null || current.isEmpty() ? null : ThemeLibrary.label(current),
+                    new Intent(this, ThemePickerActivity.class));
+        }
         // Through Home, so it rebuilds with the new choices when Launcher settings closes.
         addRow(rows, R.drawable.ic_home_settings, R.string.launcher_settings, 0,
                 new Intent(this, MainActivity.class).setAction(MainActivity.ACTION_LAUNCHER_SETTINGS));
@@ -68,12 +75,16 @@ public final class QuickSettingsActivity extends Activity {
     }
 
     private void addRow(LinearLayout rows, int icon, int title, int status, Intent target) {
+        addRow(rows, icon, getString(title), status == 0 ? null : getString(status), target);
+    }
+
+    private void addRow(LinearLayout rows, int icon, CharSequence title, CharSequence status, Intent target) {
         View row = getLayoutInflater().inflate(R.layout.item_input, rows, false);
         ((ImageView) row.findViewById(R.id.icon)).setImageResource(icon);
         ((TextView) row.findViewById(R.id.title)).setText(title);
         row.findViewById(R.id.dot).setVisibility(View.GONE);
         TextView hint = row.findViewById(R.id.status);
-        if (status != 0) hint.setText(status);
+        if (status != null) hint.setText(status);
         else hint.setVisibility(View.GONE);
         row.setOnClickListener(v -> {
             try {

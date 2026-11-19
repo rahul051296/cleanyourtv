@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<!-- No Home tile and no icon on purpose (MissingLeanbackLauncher, MissingApplicationIcon): the add-on only serves
+     data to the launcher. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="MissingLeanbackLauncher,MissingApplicationIcon">
     <!-- The only permission: Open-Meteo, for the current weather and today's high and low. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
-    <application android:allowBackup="false" android:label="@string/app_name">
+    <application android:allowBackup="false" android:label="@string/app_name"
+        tools:ignore="DataExtractionRules">
         <!-- Clean Your TV reads the weather line from this provider (theme key weather_line). -->
         <meta-data android:name="com.gathin.tvhome.weather" android:value="io.github.rahul051296.dashboarddata.weather" />
 
         <provider
             android:name=".WeatherProvider"
             android:authorities="io.github.rahul051296.dashboarddata.weather"
-            android:exported="true" />
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
 
         <!-- No tile. The place is set once over ADB with extras lat, lon and unit (c or f). -->
         <activity

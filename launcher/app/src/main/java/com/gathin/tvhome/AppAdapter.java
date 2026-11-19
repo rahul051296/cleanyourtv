@@ -1,5 +1,6 @@
 package com.gathin.tvhome;
 
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.ComponentName;
@@ -14,6 +15,7 @@ import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
@@ -213,8 +215,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     private final boolean reducedMotion;
     /** The focus zoom may overshoot (config.xml, focus_overshoot). */
     private final boolean focusOvershoot;
-    /** focus_lift: see Holder.lift. */
-    private final boolean focusLift;
+    /** focus_lift: see Holder.lift; focus_lift 2 makes it larger. */
+    private final boolean focusLift, focusLiftStrong;
+    /** focus_dim: shared by every tile; see FocusDim. */
+    private final FocusDim focusDim;
     /** The tile that last took focus, so the next one leans the way focus moved. */
     static int liftLastPosition = -1;
     /** Package to the action its tile sends instead of the start screen (config.xml, launch_actions). */
@@ -248,6 +252,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         this.reducedMotion = cfg.reducedMotion;
         this.focusOvershoot = cfg.focusOvershoot;
         this.focusLift = cfg.console.focusLift;
+        this.focusLiftStrong = cfg.console.focusLift && cfg.console.focusLiftStrong;
+        this.focusDim = new FocusDim(cfg.animations ? cfg.console.focusDim : 0);
         this.rowsBelowDock = cfg.rowsBelowDock;
         this.dockTitle = cfg.dockTitle;
         this.dockRow = cfg.dockRow;
@@ -466,7 +472,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             View label = v.findViewById(R.id.label);
             label.setPadding(label.getPaddingLeft(), label.getPaddingTop(), label.getPaddingRight(), Math.round(4f * density));
         }
-        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot, focusLift);
+        return new Holder(v, listener, animations, advancedEffects, reducedMotion, restNameAlpha, focusOvershoot, focusLift,
+                focusScale(), focusLiftStrong ? Holder.STRONG_LIFT_SHADOW_DP : Holder.LIFT_SHADOW_DP, focusDim);
     }
 
     @Override
@@ -501,7 +508,8 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         float dp = ctx.getResources().getDisplayMetrics().density;
         h.card.setTranslationY(focused && h.lift ? -Holder.LIFT_DP * dp
                 : focused && advancedEffects && !dockKind ? -4f * dp : 0f);
-        h.card.setTranslationZ(focused && h.lift ? Holder.LIFT_SHADOW_DP * dp : focused && advancedEffects ? 8f * dp : 0f);
+        h.card.setTranslationZ(focused && h.lift ? h.liftShadowDp * dp : focused && advancedEffects ? 8f * dp : 0f);
+        h.dim(focusDim.active && !focused, false);
         h.card.setRotationY(0f);
         h.banner.setScaleX(focused && advancedEffects ? 1.035f : 1f);
         h.banner.setScaleY(focused && advancedEffects ? 1.035f : 1f);
@@ -823,7 +831,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
     }
 
     float focusScale() {
-        return !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
+        return !animations ? 1f : focusLiftStrong ? 1.16f : advancedEffects ? 1.12f : 1.10f;
     }
 
     /** A vivid colour sampled from the app's banner (or icon), cached per entry; a card's accent when it set one. */
@@ -1046,6 +1054,35 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
         return 16f * density * Math.min(1f, tileWidthPx / (DESIGN_W_DP * density));
     }
 
+    /**
+     * focus_dim: while a tile has focus, every other tile is darkened, so the focused one stands out (with focus_lift,
+     * Apple TV's way of showing focus without an outline). When focus leaves the tiles, for the hero or the top bar,
+     * none is darkened.
+     */
+    static final class FocusDim {
+        /** The shade's alpha over a tile that is not focused, 0 to 255; 0 when focus_dim is off. */
+        final int alpha;
+        /** A tile has focus now. */
+        boolean active;
+
+        FocusDim(int percent) {
+            alpha = Math.round(percent * 2.55f);
+        }
+
+        boolean on() {
+            return alpha > 0;
+        }
+
+        /** After focus moved: every tile but the focused one darkened, or none when focus has left the tiles. */
+        void update(RecyclerView grid) {
+            active = grid.getFocusedChild() != null;
+            for (int i = 0; i < grid.getChildCount(); i++) {
+                RecyclerView.ViewHolder vh = grid.getChildViewHolder(grid.getChildAt(i));
+                if (vh instanceof Holder) ((Holder) vh).dim(active && !((Holder) vh).card.hasFocus(), true);
+            }
+        }
+    }
+
     static final class Holder extends RecyclerView.ViewHolder {
         final View card;
         /** item_app.xml's tile_bg: the dark card behind an icon tile, or behind a banner that has transparent parts. */
@@ -1065,14 +1102,24 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
          * degrees the way focus moved and settles flat, then a soft shine crosses it once. Eased out, no bounce.
          */
         final boolean lift;
-        static final float LIFT_DP = 8f, LIFT_SHADOW_DP = 18f, LIFT_LEAN_DEGREES = 5f;
+        static final float LIFT_DP = 8f, LIFT_SHADOW_DP = 18f, STRONG_LIFT_SHADOW_DP = 30f, LIFT_LEAN_DEGREES = 5f;
+        /** How large the focused tile grows, and how deep its lift's shadow (focus_lift 2 goes further). */
+        final float focusScale, liftShadowDp;
+        private final FocusDim focusDim;
+        /** focus_dim's shade over the card, drawn above its content; null when focus_dim is off. */
+        private final ColorDrawable shade;
+        private ValueAnimator shading;
         private final ShineDrawable shine;
         /** A dock tile: it grows in place without advanced_effects' lift, which reads as off-centre in the band (#2135). */
         boolean inDock;
 
         Holder(View v, TileListener listener, boolean animations, boolean advancedEffects,
-               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean lift) {
+               boolean reducedMotion, float restNameAlpha, boolean overshoot, boolean lift,
+               float focusScale, float liftShadowDp, FocusDim focusDim) {
             super(v);
+            this.focusScale = focusScale;
+            this.liftShadowDp = liftShadowDp;
+            this.focusDim = focusDim;
             card = v.findViewById(R.id.card);
             cardBackground = card.getBackground();
             banner = v.findViewById(R.id.banner);
@@ -1087,6 +1134,14 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             this.lift = lift && animations;
             shine = this.lift && !reducedMotion ? new ShineDrawable() : null;
             if (shine != null) card.setForeground(shine);
+            if (focusDim.on()) {
+                shade = new ColorDrawable(Color.BLACK);
+                shade.setAlpha(0);
+                card.getOverlay().add(shade);
+                card.addOnLayoutChangeListener((c, l, t, r, b, ol, ot, or, ob) -> shade.setBounds(0, 0, r - l, b - t));
+            } else {
+                shade = null;
+            }
 
             final float density = v.getResources().getDisplayMetrics().density;
             card.setOutlineProvider(new ViewOutlineProvider() {
@@ -1110,8 +1165,10 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
                 view.animate().cancel();
                 banner.animate().cancel();
                 name.animate().cancel();
-                float scale = !animations ? 1f : advancedEffects ? 1.12f : 1.10f;
-                float s = focused ? scale : 1f;
+                float s = focused ? focusScale : 1f;
+                if (focusDim.on()) itemView.post(() -> {
+                    if (itemView.getParent() instanceof RecyclerView) focusDim.update((RecyclerView) itemView.getParent());
+                });
                 if (!animations) {
                     view.setScaleX(1f);
                     view.setScaleY(1f);
@@ -1163,6 +1220,25 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             });
         }
 
+        /** focus_dim: darkens this tile (another one has focus), or clears it. */
+        void dim(boolean on, boolean animate) {
+            if (shade == null) return;
+            int to = on ? focusDim.alpha : 0;
+            if (shading != null) shading.cancel();
+            if (!animate || reducedMotion) {
+                shade.setAlpha(to);
+                card.invalidate();
+                return;
+            }
+            shading = ValueAnimator.ofInt(shade.getAlpha(), to);
+            shading.setDuration(180);
+            shading.addUpdateListener(a -> {
+                shade.setAlpha((int) a.getAnimatedValue());
+                card.invalidate();
+            });
+            shading.start();
+        }
+
         /** focus_lift's motion for one tile; see the field. */
         private void liftFocus(View view, boolean focused, float scale, float density) {
             int pos = getBindingAdapterPosition();
@@ -1177,7 +1253,7 @@ public class AppAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
             }
             view.animate().scaleX(scale).scaleY(scale)
                     .translationY(focused ? -LIFT_DP * density : 0f)
-                    .translationZ(focused ? LIFT_SHADOW_DP * density : 0f)
+                    .translationZ(focused ? liftShadowDp * density : 0f)
                     .rotationY(0f)
                     .setDuration(reducedMotion ? Motion.REDUCED_MS : focused ? 320 : 200)
                     .setInterpolator(new DecelerateInterpolator(focused ? 2.2f : 1.5f))

@@ -75,13 +75,23 @@ public class DockDecoration extends RecyclerView.ItemDecoration {
         return Math.max(0f, Math.min(gap, roomPx));
     }
 
+    /** recent_shelf: room left under the dock row for the Recently watched row, in px. */
+    private int extraBelow;
+
+    /** @return true when the room changed and the grid needs a new layout. */
+    boolean setExtraBelow(int px) {
+        if (px == extraBelow) return false;
+        extraBelow = px;
+        return true;
+    }
+
     @Override
     public void getItemOffsets(@NonNull Rect outRect, @NonNull View view, @NonNull RecyclerView parent,
                                @NonNull RecyclerView.State state) {
         int pos = parent.getChildAdapterPosition(view);
         if (pos >= 0 && (singleRow || pos < dockSize)) {
             outRect.top = (int) (6 * density);
-            outRect.bottom = (int) (12 * density);
+            outRect.bottom = (int) (12 * density) + (singleRow ? 0 : extraBelow);
         }
     }
 
